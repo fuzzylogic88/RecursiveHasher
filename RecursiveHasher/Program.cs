@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -30,10 +31,14 @@ namespace RecursiveHasher
                     Console.WriteLine("Directory contains no files. Please choose another directory.");
                 }
             }
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
             HashFinder(files);
+
             GoSpin = false;
+
             Console.WriteLine("");
-            Console.WriteLine("Finished.");
+            Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ". (parallel foreach)");
             Console.ReadKey();
         }
 
@@ -106,6 +111,9 @@ namespace RecursiveHasher
             Console.WriteLine("\rCalculating file hashes, please wait.");
             string LogPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\hashout.csv";
 
+            decimal Progress = 1;
+
+            // todo CONVERT TO CSVHELPER OBJ
 
             ConcurrentBag<string> resultdata = new ConcurrentBag<string>();
 
@@ -120,9 +128,13 @@ namespace RecursiveHasher
                         {
                             using (var stream = File.OpenRead(f))
                             {
-                                Console.Title = ("Current File: " + f.ToString());
+                                Console.WriteLine("\x000DCurrent File: " + f.ToString());
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
                                 resultdata.Add(f.ToString() + "," + MD5);
+
+                                decimal p =  Math.Round(Progress / files.Count() * 100m,2);
+                                Console.Title = p.ToString() + "% complete.";
+                                Progress++;
                             }
                         }
                         catch (UnauthorizedAccessException)
