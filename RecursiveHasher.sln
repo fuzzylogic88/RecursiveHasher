@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.4.33205.214
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RecursiveHasher", "RecursiveHasher\RecursiveHasher.csproj", "{A816446E-FBF1-4748-B11A-01E8009F0032}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Debug|x64.ActiveCfg = Debug|x64
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Debug|x64.Build.0 = Debug|x64
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Release|x64.ActiveCfg = Release|x64
+		{A816446E-FBF1-4748-B11A-01E8009F0032}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0094E622-AA8B-4F01-809E-4870D5AF6686}
+	EndGlobalSection
+EndGlobal
