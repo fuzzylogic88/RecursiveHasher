@@ -103,7 +103,7 @@ namespace RecursiveHasher
 
         static void HashFinder(List<string> files)
         {
-            Console.WriteLine("Calculating file hashes, please wait.");
+            Console.WriteLine("\rCalculating file hashes, please wait.");
             string LogPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\hashout.csv";
 
 
@@ -120,7 +120,7 @@ namespace RecursiveHasher
                         {
                             using (var stream = File.OpenRead(f))
                             {
-                                Console.Write("\r{0}{1}", "Current File: ", f);
+                                Console.Title = ("Current File: " + f.ToString());
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
                                 resultdata.Add(f.ToString() + "," + MD5);
                             }
