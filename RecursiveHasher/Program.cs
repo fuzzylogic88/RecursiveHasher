@@ -1,8 +1,10 @@
 ﻿
+using CsvHelper;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -111,16 +113,15 @@ namespace RecursiveHasher
             Console.WriteLine("\rCalculating file hashes, please wait.");
             string LogPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\hashout.csv";
 
-            decimal Progress = 1;
+            decimal currentfile = 1;
 
-            // todo CONVERT TO CSVHELPER OBJ
-
-            ConcurrentBag<string> resultdata = new ConcurrentBag<string>();
-
-            using (StreamWriter writer = new StreamWriter(LogPath))
+            ConcurrentBag<string> resultdata = new ConcurrentBag<string>
             {
-                writer.WriteLine("Path,MD5 Hash");
-                Parallel.ForEach(files, f =>
+                "Path,MD5 Hash"
+            };
+
+            // Compute MD5 hashes for each file in selected directory
+            Parallel.ForEach(files, f =>
                 {
                     using (MD5 MD5hsh = MD5.Create())
                     {
@@ -132,9 +133,9 @@ namespace RecursiveHasher
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
                                 resultdata.Add(f.ToString() + "," + MD5);
 
-                                decimal p =  Math.Round(Progress / files.Count() * 100m,2);
+                                decimal p =  Math.Round(currentfile / files.Count() * 100m,2);
                                 Console.Title = p.ToString() + "% complete.";
-                                Progress++;
+                                currentfile++;
                             }
                         }
                         catch (UnauthorizedAccessException)
@@ -148,12 +149,17 @@ namespace RecursiveHasher
                     }
                 });
 
-                foreach (string d in resultdata)
+            // Write computed hashes to .csv on desktop
+            Console.WriteLine("\rWriting results to disk. Please wait.");
+            using (var sw = new StreamWriter(LogPath))
+            {
+                using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
                 {
-                    writer.WriteLine(d);
-                }
-                writer.Flush();
-                writer.Close(); 
+                    foreach (string d in resultdata)
+                    {
+                        csv.WriteRecords(d);
+                    }
+                }    
             }
         }
     }
