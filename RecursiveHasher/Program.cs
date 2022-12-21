@@ -40,7 +40,7 @@ namespace RecursiveHasher
             GoSpin = false;
 
             Console.WriteLine("");
-            Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ". (parallel foreach)");
+            Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
             Console.ReadKey();
         }
 
@@ -102,7 +102,7 @@ namespace RecursiveHasher
                 while (GoSpin)
                 {
                     Console.Write(".");
-                    Thread.Sleep(250);
+                    Thread.Sleep(100);
                 }
                 Thread.Sleep(100);
             }
@@ -110,19 +110,30 @@ namespace RecursiveHasher
 
         static void HashFinder(List<string> files)
         {
-            Console.WriteLine("\rCalculating file hashes, please wait.");
+            Console.WriteLine("\rCalculating file hashes, please wait");
             string LogPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\hashout.csv";
 
             decimal currentfile = 1;
 
-            ConcurrentBag<string> resultdata = new ConcurrentBag<string>
+            ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
+
+            FileData objHeader = new FileData()
             {
-                "Path,MD5 Hash"
+                FilePath = "Directory",
+                FileHash = "MD5 Hash",
+                DateOfAnalysis = "Date analyzed"
             };
+            resultdata.Add(objHeader);
 
             // Compute MD5 hashes for each file in selected directory
             Parallel.ForEach(files, f =>
                 {
+                    FileData fd = new FileData()
+                    {
+                        FilePath = f,
+                        DateOfAnalysis = DateTime.Now.ToString()
+                    };
+
                     using (MD5 MD5hsh = MD5.Create())
                     {
                         try
@@ -131,36 +142,45 @@ namespace RecursiveHasher
                             {
                                 Console.WriteLine("\x000DCurrent File: " + f.ToString());
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
-                                resultdata.Add(f.ToString() + "," + MD5);
 
-                                decimal p =  Math.Round(currentfile / files.Count() * 100m,2);
+                                fd.FileHash = MD5;
+                                resultdata.Add(fd);
+
+                                // Post progress to console titlebar
+                                decimal p = Math.Round(currentfile / files.Count() * 100m, 2);
                                 Console.Title = p.ToString() + "% complete.";
                                 currentfile++;
                             }
                         }
                         catch (UnauthorizedAccessException)
                         {
-                            resultdata.Add(f.ToString() + "," + "Read access denied.");
+                            fd.FileHash = "Read access denied.";
+                            resultdata.Add(fd);
                         }
+
                         catch (IOException)
                         {
-                            resultdata.Add(f.ToString() + "," + "File in use.");
+                            fd.FileHash = "File in use.";
+                            resultdata.Add(fd);
                         }
                     }
                 });
 
             // Write computed hashes to .csv on desktop
-            Console.WriteLine("\rWriting results to disk. Please wait.");
+            Console.WriteLine("\rWriting results to disk");
             using (var sw = new StreamWriter(LogPath))
             {
                 using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
                 {
-                    foreach (string d in resultdata)
-                    {
-                        csv.WriteRecords(d);
-                    }
-                }    
+                    csv.WriteRecords(resultdata);
+                } 
             }
         }
+    }
+    public class FileData
+    {
+        public string FilePath { get; set; }
+        public string FileHash { get; set; }
+        public string DateOfAnalysis { get; set; }
     }
 }
