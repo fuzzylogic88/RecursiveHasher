@@ -154,14 +154,6 @@ namespace RecursiveHasher
 
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
-                //FileData objHeader = new FileData()
-                //{
-                //    FilePath = "Directory",
-                //    FileHash = "MD5 Hash",
-                //    DateOfAnalysis = "Date analyzed"
-                //};
-                //resultdata.Add(objHeader);
-
                 // Compute MD5 hashes for each file in selected directory
                 Parallel.ForEach(files, f =>
                     {
@@ -227,6 +219,7 @@ namespace RecursiveHasher
         {
 
         }
+
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
         {
             var fileBase = Path.GetFileNameWithoutExtension(fileName);
