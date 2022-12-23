@@ -10,10 +10,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.Remoting.Contexts;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.StartPanel;
 
 namespace RecursiveHasher
 {
@@ -163,11 +165,12 @@ namespace RecursiveHasher
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
                 // Compute MD5 hashes for each file in selected directory
-                Parallel.ForEach(files, f =>
+                // Using foreach vs parallel foreach because we want more sequential reads of HDD.
+                foreach (string file in files) 
                     {
                         FileData fd = new FileData()
                         {
-                            FilePath = f,
+                            FilePath = file,
                             DateOfAnalysis = DateTime.Now.ToString()
                         };
 
@@ -175,9 +178,9 @@ namespace RecursiveHasher
                         {
                             try
                             {
-                                using (var stream = File.OpenRead(f))
+                                using (var stream = File.OpenRead(file))
                                 {
-                                    Console.WriteLine("\rCurrent File: " + f.ToString());
+                                    Console.WriteLine("\rCurrent File: " + file.ToString());
                                     string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
 
                                     fd.FileHash = MD5;
@@ -201,7 +204,7 @@ namespace RecursiveHasher
                                 resultdata.Add(fd);
                             }
                         }
-                    });
+                    }
 
                 // Write computed hashes to .csv on desktop
                 Console.WriteLine("\rWriting results to disk");
@@ -228,19 +231,18 @@ namespace RecursiveHasher
             int FilesAdded = 0;
 
             List<string> ComparisonFiles = new List<string>();
-            List<List<FileData>> FileDataBlob = new List<List<FileData>>();
 
-            OpenFileDialog FileSelect = new OpenFileDialog();
+            List<FileData> FileDataA = new List<FileData>();
+            List<FileData> FileDataB = new List<FileData>();
 
             // Get two files for comparison
             Console.Clear();
             while (FilesAdded < 2)
             {
-                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison."); }
-                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison."); }
-                else if (FilesAdded > 1) { Console.WriteLine("Select a file."); }
+                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified)"); }
+                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against)"); }
 
-                FileSelect = new OpenFileDialog();
+                OpenFileDialog FileSelect = new OpenFileDialog();
                 FileSelect.ShowDialog();
 
                 if (FileSelect.FileName != string.Empty)
@@ -255,40 +257,57 @@ namespace RecursiveHasher
                 }
             }
 
+            GoSpin = true;
+            Console.WriteLine("Working");
 
             // Read all selected files into memory
-            foreach (string ComparisonFile in ComparisonFiles)
+            for (int i = 0; i < ComparisonFiles.Count; i++)
             {
-                using (var reader = new StreamReader(ComparisonFile))
+                using (var reader = new StreamReader(ComparisonFiles[i]))
                 using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
                 {
-                    FileDataBlob.Add(csv.GetRecords<FileData>().ToList());
+                    if (i == 0) { FileDataA = csv.GetRecords<FileData>().ToList(); }
+                    else if (i == 1) { FileDataB = csv.GetRecords<FileData>().ToList(); }
                 }
             }
 
             // Generate a list of file hash differences between all files read.
-            List<string> FilesToCopy = SymmetricDifferenceGetter(FileDataBlob);
-            Console.WriteLine(FilesToCopy.Count().ToString() + " file differences found.");
-        }
+            List<FileData> FileDifferences = FileDataB
+                .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))
+                .ToList();
 
-        /// <summary>
-        /// Gets diffences between a set of FileData object lists.
-        /// 
-        /// </summary>
-        /// <param name="FileDataBlob"></param>
-        /// <returns></returns>
-        static List<string> SymmetricDifferenceGetter(List<List<FileData>> FileDataBlob)
-        {
-            List<string> FileDifferences = new List<string>();
-
-            for (int f = 0; f < FileDataBlob.Count(); f++)
+            if (FileDifferences.Count == 0)
             {
-                var differences = FileDataBlob[f]
-                    .Except(FileDataBlob[f + 1])
-                    .Union(FileDataBlob[f + 1].Except(FileDataBlob[f]));
+                Console.WriteLine("No differences found, press a key to compare in reverse direction.");
+                Console.ReadKey();
+                FileDifferences = FileDataA
+                .Where(x => !FileDataB.Any(y => y.FileHash == x.FileHash))
+                .ToList();
             }
-            return FileDifferences;
+
+            GoSpin = false;
+            Thread.Sleep(250);
+
+            Console.Clear();
+            if (FileDifferences.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(FileDifferences.Count().ToString() + " file differences found.");
+            
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("No file differences were found!");
+            }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("");
+            Console.WriteLine("Press any key to exit.");
+            Console.ReadKey();
         }
+
+
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
         {
