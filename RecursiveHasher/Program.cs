@@ -1,21 +1,23 @@
-﻿
+﻿/* 
+ * RecursiveHasher
+ * Daniel Green, 2022
+ * 
+ * Computes MD5 hashes for all files in directory/subdirectory,
+ * Compares output files to determine if files were missing / deleted.
+ */
+
 using CsvHelper;
-using CsvHelper.Configuration;
-using CsvHelper.Configuration.Attributes;
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Runtime.Remoting.Contexts;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.StartPanel;
 
 namespace RecursiveHasher
 {
@@ -239,8 +241,8 @@ namespace RecursiveHasher
             Console.Clear();
             while (FilesAdded < 2)
             {
-                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified)"); }
-                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against)"); }
+                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified / with files suspected missing)"); }
+                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against / without deleted files)"); }
 
                 OpenFileDialog FileSelect = new OpenFileDialog();
                 FileSelect.ShowDialog();
@@ -278,6 +280,9 @@ namespace RecursiveHasher
 
             if (FileDifferences.Count == 0)
             {
+                GoSpin = false;
+                Thread.Sleep(250);
+
                 Console.WriteLine("No differences found, press a key to compare in reverse direction.");
                 Console.ReadKey();
                 FileDifferences = FileDataA
@@ -294,6 +299,7 @@ namespace RecursiveHasher
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine(FileDifferences.Count().ToString() + " file differences found.");
                 Console.WriteLine("Press C to copy differences to folder on Desktop.");
+                Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("Press any other key to exit.");
 
                 ConsoleKeyInfo op = Console.ReadKey(true);
@@ -302,7 +308,7 @@ namespace RecursiveHasher
                     GoSpin = true;
                     Console.WriteLine("Copying data, please wait");
 
-                    string dfolder = Environment.SpecialFolder.Desktop + @"\FileDifferences";
+                    string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
                     if (!Directory.Exists(dfolder))
                     {
                         Directory.CreateDirectory(dfolder);
@@ -311,17 +317,34 @@ namespace RecursiveHasher
                     // Copy file differences to folder on desktop
                     foreach (FileData diff in FileDifferences)
                     {
-                        // in the event of duplicate photos, check that filename is unique...
                         string fname = string.Empty;
-                        if (File.Exists(dfolder + Path.GetFileName(diff.FilePath)))
+                        string OriginalFileName = Path.GetFileName(diff.FilePath);
+
+                        // in the event of duplicate photos, check that filename is unique...
+                        if (File.Exists(dfolder + OriginalFileName))
                         {
-                           fname = FilenameGenerator(dfolder,Path.GetFileName(diff.FilePath),1024);
+                           fname = FilenameGenerator(dfolder,OriginalFileName,1024);
                         }
-                        else { fname = diff.FilePath; }
+                        else { fname = dfolder + OriginalFileName; }
 
                         // Copy file to directory, NOT overwriting.
-                        File.Copy(diff.FilePath, dfolder, false);
+                        File.Copy(diff.FilePath, fname, false);
                     }
+
+                    string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
+
+                    using (var sw = new StreamWriter(DiffResultPath))
+                    {
+                        using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
+                        {
+                            csv.WriteRecords(FileDifferences);
+                        }
+                    }
+
+                    GoSpin = false;
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.Clear();
+                    Console.WriteLine("Copy operation finished successfully.");
                 }
                 else
                 {
