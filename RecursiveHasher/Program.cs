@@ -1,5 +1,7 @@
 ﻿
 using CsvHelper;
+using CsvHelper.Configuration;
+using CsvHelper.Configuration.Attributes;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -25,7 +27,7 @@ namespace RecursiveHasher
             try
             {
                 Task.Factory.StartNew(() => LoadSpinTask());
-                Console.Title = "Recursive MD5 Hasher / Directory Comparer";
+                Console.Title = "Recursive MD5 Hasher";
 
                 Console.WriteLine("Press D to select a directory.");
                 Console.WriteLine("Press C to open files for comparison.");
@@ -217,6 +219,54 @@ namespace RecursiveHasher
 
         static void ResultComparison()
         {
+            bool QuitLoadLoop = false;
+            int FilesAdded = 0;
+
+            List<string> ComparisonFiles = new List<string>();
+            List<List<FileData>> FileDataBlob = new List<List<FileData>>();
+
+            OpenFileDialog FileSelect = new OpenFileDialog();
+
+            while (!QuitLoadLoop)
+            {
+                if (FilesAdded < 2)
+                {
+                    if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison..."); }
+                    if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison..."); }
+                    FileSelect.ShowDialog();
+
+                    if (FileSelect.FileName != string.Empty)
+                    {
+                        ComparisonFiles.Add(FileSelect.FileName);
+                        FilesAdded++;
+                    }    
+                    else
+                    {
+                        Console.WriteLine("No file selected.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Press O to open an additional file.\r\nPress any other key to continue.");
+                    ConsoleKeyInfo ContinueFileAdd = Console.ReadKey();
+
+                    if (ContinueFileAdd.KeyChar.ToString().ToUpper() == "O")
+                    {
+                        FileSelect.ShowDialog();
+                        ComparisonFiles.Add(FileSelect.FileName);
+                    }
+                    else { QuitLoadLoop = true; }
+                }
+            }
+
+            foreach (string ComparisonFile in ComparisonFiles)
+            {
+                using (var reader = new StreamReader(ComparisonFile))
+                using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
+                {
+                    FileDataBlob.Add(csv.GetRecords<FileData>().ToList());
+                }
+            }
 
         }
 
@@ -255,8 +305,8 @@ namespace RecursiveHasher
             }
             throw new Exception("Could not create unique filename in " + maxAttempts + " attempts");
         }
-
     }
+
     public class FileData
     {
         public string FilePath { get; set; }
