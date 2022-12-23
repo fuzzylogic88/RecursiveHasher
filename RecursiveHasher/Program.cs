@@ -293,7 +293,40 @@ namespace RecursiveHasher
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine(FileDifferences.Count().ToString() + " file differences found.");
-            
+                Console.WriteLine("Press C to copy differences to folder on Desktop.");
+                Console.WriteLine("Press any other key to exit.");
+
+                ConsoleKeyInfo op = Console.ReadKey(true);
+                if (op.KeyChar.ToString().ToUpper() == "C")
+                {
+                    GoSpin = true;
+                    Console.WriteLine("Copying data, please wait");
+
+                    string dfolder = Environment.SpecialFolder.Desktop + @"\FileDifferences";
+                    if (!Directory.Exists(dfolder))
+                    {
+                        Directory.CreateDirectory(dfolder);
+                    }
+                    
+                    // Copy file differences to folder on desktop
+                    foreach (FileData diff in FileDifferences)
+                    {
+                        // in the event of duplicate photos, check that filename is unique...
+                        string fname = string.Empty;
+                        if (File.Exists(dfolder + Path.GetFileName(diff.FilePath)))
+                        {
+                           fname = FilenameGenerator(dfolder,Path.GetFileName(diff.FilePath),1024);
+                        }
+                        else { fname = diff.FilePath; }
+
+                        // Copy file to directory, NOT overwriting.
+                        File.Copy(diff.FilePath, dfolder, false);
+                    }
+                }
+                else
+                {
+                    Environment.Exit(0);
+                }
             }
             else
             {
