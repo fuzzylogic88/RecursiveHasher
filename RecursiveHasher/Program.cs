@@ -3,6 +3,7 @@ using CsvHelper;
 using CsvHelper.Configuration;
 using CsvHelper.Configuration.Attributes;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -27,12 +28,16 @@ namespace RecursiveHasher
             try
             {
                 Task.Factory.StartNew(() => LoadSpinTask());
+
                 Console.Title = "Recursive MD5 Hasher";
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.BackgroundColor = ConsoleColor.Black;
+                Console.Clear();
 
                 Console.WriteLine("Press D to select a directory.");
                 Console.WriteLine("Press C to open files for comparison.");
 
-                ConsoleKeyInfo op = Console.ReadKey();
+                ConsoleKeyInfo op = Console.ReadKey(true);
                 switch (op.KeyChar.ToString().ToUpper())
                 {
                     case "D":
@@ -46,7 +51,7 @@ namespace RecursiveHasher
             catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
-                Console.ReadKey();
+                Console.ReadKey(true);
             }
         }
 
@@ -67,19 +72,20 @@ namespace RecursiveHasher
             {
                 Console.WriteLine("");
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
-                Console.ReadKey();
+                Console.ReadKey(true);
             }
             else
             {
                 Console.WriteLine("");
                 Console.WriteLine("Process failed.");
-                Console.ReadKey();
+                Console.ReadKey(true);
             }
 
         }
 
         static List<string> FileList()
         {
+            Console.Clear();
             Console.WriteLine("Select a directory to read...");
 
             RootDirectory = string.Empty;
@@ -106,7 +112,7 @@ namespace RecursiveHasher
                 else
                 {
                     Console.WriteLine("No directory selected. Please select a folder.");
-                    Console.ReadKey();
+                    Console.ReadKey(true);
                 }
             }
             return files;
@@ -219,7 +225,6 @@ namespace RecursiveHasher
 
         static void ResultComparison()
         {
-            bool QuitLoadLoop = false;
             int FilesAdded = 0;
 
             List<string> ComparisonFiles = new List<string>();
@@ -227,38 +232,31 @@ namespace RecursiveHasher
 
             OpenFileDialog FileSelect = new OpenFileDialog();
 
-            while (!QuitLoadLoop)
+            // Get two files for comparison
+            Console.Clear();
+            while (FilesAdded < 2)
             {
-                if (FilesAdded < 2)
-                {
-                    if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison..."); }
-                    if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison..."); }
-                    FileSelect.ShowDialog();
+                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison."); }
+                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison."); }
+                else if (FilesAdded > 1) { Console.WriteLine("Select a file."); }
 
-                    if (FileSelect.FileName != string.Empty)
-                    {
-                        ComparisonFiles.Add(FileSelect.FileName);
-                        FilesAdded++;
-                    }    
-                    else
-                    {
-                        Console.WriteLine("No file selected.");
-                    }
+                FileSelect = new OpenFileDialog();
+                FileSelect.ShowDialog();
+
+                if (FileSelect.FileName != string.Empty)
+                {
+                    ComparisonFiles.Add(FileSelect.FileName);
+                    FilesAdded++;
                 }
                 else
                 {
-                    Console.WriteLine("Press O to open an additional file.\r\nPress any other key to continue.");
-                    ConsoleKeyInfo ContinueFileAdd = Console.ReadKey();
-
-                    if (ContinueFileAdd.KeyChar.ToString().ToUpper() == "O")
-                    {
-                        FileSelect.ShowDialog();
-                        ComparisonFiles.Add(FileSelect.FileName);
-                    }
-                    else { QuitLoadLoop = true; }
+                    Console.Clear();
+                    Console.WriteLine("No file was selected.");
                 }
             }
 
+
+            // Read all selected files into memory
             foreach (string ComparisonFile in ComparisonFiles)
             {
                 using (var reader = new StreamReader(ComparisonFile))
@@ -268,6 +266,28 @@ namespace RecursiveHasher
                 }
             }
 
+            // Generate a list of file hash differences between all files read.
+            List<string> FilesToCopy = SymmetricDifferenceGetter(FileDataBlob);
+            Console.WriteLine(FilesToCopy.Count().ToString() + " file differences found.");
+        }
+
+        /// <summary>
+        /// Gets diffences between a set of FileData object lists.
+        /// 
+        /// </summary>
+        /// <param name="FileDataBlob"></param>
+        /// <returns></returns>
+        static List<string> SymmetricDifferenceGetter(List<List<FileData>> FileDataBlob)
+        {
+            List<string> FileDifferences = new List<string>();
+
+            for (int f = 0; f < FileDataBlob.Count(); f++)
+            {
+                var differences = FileDataBlob[f]
+                    .Except(FileDataBlob[f + 1])
+                    .Union(FileDataBlob[f + 1].Except(FileDataBlob[f]));
+            }
+            return FileDifferences;
         }
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
