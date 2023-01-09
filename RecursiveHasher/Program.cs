@@ -201,6 +201,7 @@ namespace RecursiveHasher
                                 int FillCount = decimal.ToInt32(currentfile) / PbarChunk;
                                 int EmptyCount = 50 - FillCount;
 
+                                // Fix error @ 100%
                                 Console.WriteLine(new string(BoxFill, FillCount) + new string(BoxEmpty, EmptyCount));
 
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
