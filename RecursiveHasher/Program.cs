@@ -15,6 +15,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -25,12 +26,16 @@ namespace RecursiveHasher
     {
         public static bool GoSpin = false;
         public static string RootDirectory = string.Empty;
+        public static char BoxFill = '\u2588';
+        public static char BoxEmpty = '\u2593';
 
         [STAThread]
         static void Main(string[] args)
         {
             try
             {
+                Console.OutputEncoding = Encoding.Unicode;
+
                 Task.Factory.StartNew(() => LoadSpinTask());
 
                 Console.Title = "Recursive MD5 Hasher";
@@ -40,7 +45,7 @@ namespace RecursiveHasher
 
                 Console.WriteLine("Press D to select a directory.");
                 Console.WriteLine("Press C to open files for comparison.");
-
+                
                 ConsoleKeyInfo op = Console.ReadKey(true);
                 switch (op.KeyChar.ToString().ToUpper())
                 {
@@ -110,8 +115,10 @@ namespace RecursiveHasher
                     RootDirectory = hf.SelectedPath;
                     Console.WriteLine("Selected path: '" + RootDirectory + "'");
                     Console.WriteLine("Reading directory info");
+
                     GoSpin = true;
                     AddFiles(hf.SelectedPath, files);
+                    GoSpin = false;
                 }
                 else
                 {
@@ -156,7 +163,10 @@ namespace RecursiveHasher
         {
             try
             {
-                Console.WriteLine("\rCalculating file hashes, please wait");
+                Int32 PbarChunk = Convert.ToInt32(Math.Round(files.Count / 50f,0));
+
+                Console.Clear();
+                Console.WriteLine("\rCalculating file hashes, please wait.");
 
                 // Create a unique filename for our output file
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
@@ -182,8 +192,18 @@ namespace RecursiveHasher
                             {
                                 using (var stream = File.OpenRead(file))
                                 {
-                                    Console.WriteLine("\rCurrent File: " + file.ToString());
-                                    string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
+                                Console.SetCursorPosition(0, 1);
+                                Console.WriteLine("\rCurrent File: " + file.ToString());
+
+                                Console.SetCursorPosition(0, 3);
+
+                                // get number of filled boxes to display
+                                int FillCount = decimal.ToInt32(currentfile) / PbarChunk;
+                                int EmptyCount = 50 - FillCount;
+
+                                Console.WriteLine(new string(BoxFill, FillCount) + new string(BoxEmpty, EmptyCount));
+
+                                string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
 
                                     fd.FileHash = MD5;
                                     resultdata.Add(fd);
