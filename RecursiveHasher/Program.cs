@@ -79,15 +79,17 @@ namespace RecursiveHasher
 
             if (HashFinder(files) != string.Empty)
             {
-                Console.WriteLine("");
+                Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
+                Console.ForegroundColor = ConsoleColor.Cyan;
             }
             else
             {
-                Console.WriteLine("");
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Process failed.");
                 Console.ReadKey(true);
+                Console.ForegroundColor = ConsoleColor.Cyan;
             }
 
         }
@@ -163,73 +165,71 @@ namespace RecursiveHasher
         {
             try
             {
-                Int32 PbarChunk = Convert.ToInt32(Math.Round(files.Count / 50f,0));
-
                 Console.Clear();
-                Console.WriteLine("\rCalculating file hashes, please wait.");
 
                 // Create a unique filename for our output file
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
                 decimal currentfile = 1;
+                decimal PBarChunk = files.Count / (decimal)50;
 
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
                 // Compute MD5 hashes for each file in selected directory
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
-                foreach (string file in files) 
+                foreach (string file in files)
+                {
+                    Console.SetCursorPosition(0, 0);
+                    Console.WriteLine("\rCalculating file hashes, please wait.");
+                    Console.SetCursorPosition(0, 1);
+                    Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+                    Console.WriteLine("\rCurrent File: " + file.ToString());
+
+                    FileData fd = new FileData()
                     {
-                        FileData fd = new FileData()
-                        {
-                            FilePath = file,
-                            DateOfAnalysis = DateTime.Now.ToString()
-                        };
+                        FilePath = file,
+                        DateOfAnalysis = DateTime.Now.ToString()
+                    };
 
-                        using (MD5 MD5hsh = MD5.Create())
+                    using (MD5 MD5hsh = MD5.Create())
+                    {
+                        try
                         {
-                            try
+                            using (var stream = File.OpenRead(file))
                             {
-                                using (var stream = File.OpenRead(file))
-                                {
-                                Console.SetCursorPosition(0, 1);
-                                Console.WriteLine("\rCurrent File: " + file.ToString());
-
-                                Console.SetCursorPosition(0, 3);
-
-                                // get number of filled boxes to display
-                                int FillCount = decimal.ToInt32(currentfile) / PbarChunk;
-                                int EmptyCount = 50 - FillCount;
-
-                                // Fix error @ 100%
-                                Console.WriteLine(new string(BoxFill, FillCount) + new string(BoxEmpty, EmptyCount));
-
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
-
-                                    fd.FileHash = MD5;
-                                    resultdata.Add(fd);
-
-                                    // Post progress to console titlebar
-                                    decimal p = Math.Round(currentfile / files.Count() * 100m, 2);
-                                    Console.Title = p.ToString() + "% complete.";
-                                    currentfile++;
-                                }
-                            }
-                            catch (UnauthorizedAccessException)
-                            {
-                                fd.FileHash = "Read access denied.";
+                                fd.FileHash = MD5;
                                 resultdata.Add(fd);
                             }
+                            // get number of filled boxes to display
+                            decimal FillCount_d = currentfile / PBarChunk;
+                            int FillCount = (int)Math.Round(FillCount_d, 0);
+                            int EmptyCount = 50 - FillCount;
+                            decimal p = Math.Round(currentfile / files.Count() * 100m, 2);
 
-                            catch (IOException)
-                            {
-                                fd.FileHash = "File in use.";
-                                resultdata.Add(fd);
-                            }
+                            Console.SetCursorPosition(0, 3);
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine(new string(BoxFill, FillCount) + new string(BoxEmpty, EmptyCount) + " " + p.ToString() + "%");
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            currentfile++;
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            fd.FileHash = "Read access denied.";
+                            resultdata.Add(fd);
+                        }
+
+                        catch (IOException)
+                        {
+                            fd.FileHash = "File in use.";
+                            resultdata.Add(fd);
                         }
                     }
+                }
 
                 // Write computed hashes to .csv on desktop
+                Console.WriteLine("");
                 Console.WriteLine("\rWriting results to disk");
                 using (var sw = new StreamWriter(LogPath))
                 {
@@ -244,7 +244,7 @@ namespace RecursiveHasher
             catch (Exception ex)
             {
                 GoSpin = false;
-                MessageBox.Show("Hash calculation task failed with exception.\r\n" + ex.StackTrace,"Error",MessageBoxButtons.OK,MessageBoxIcon.Error,MessageBoxDefaultButton.Button1);
+                MessageBox.Show("Hash calculation task failed with exception.\r\n" + ex.StackTrace, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1);
                 return string.Empty;
             }
         }
