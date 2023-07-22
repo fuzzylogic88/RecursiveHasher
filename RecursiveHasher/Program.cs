@@ -178,17 +178,17 @@ namespace RecursiveHasher
 
                 // Compute MD5 hashes for each file in selected directory
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
-                foreach (string file in files)
+                Parallel.ForEach(files, s =>
                 {
                     Console.SetCursorPosition(0, 0);
                     Console.WriteLine("\rCalculating file hashes, please wait.");
                     Console.SetCursorPosition(0, 1);
                     Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
-                    Console.WriteLine("\rCurrent File: " + file.ToString());
+                    Console.WriteLine("\rCurrent File: " + s.ToString());
 
                     FileData fd = new FileData()
                     {
-                        FilePath = file,
+                        FilePath = s,
                         DateOfAnalysis = DateTime.Now.ToString()
                     };
 
@@ -196,7 +196,7 @@ namespace RecursiveHasher
                     {
                         try
                         {
-                            using (var stream = File.OpenRead(file))
+                            using (var stream = File.OpenRead(s))
                             {
                                 string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
                                 fd.FileHash = MD5;
@@ -226,7 +226,7 @@ namespace RecursiveHasher
                             resultdata.Add(fd);
                         }
                     }
-                }
+                });
 
                 // Write computed hashes to .csv on desktop
                 Console.WriteLine("");
