@@ -26,8 +26,17 @@ namespace RecursiveHasher
     {
         public static bool GoSpin = false;
         public static string RootDirectory = string.Empty;
+
+        // box
         public static char BoxFill = '\u2588';
         public static char BoxEmpty = '\u2593';
+
+        public static char BoxBendA = '\u2554';
+        public static char BoxBendB = '\u2557';
+        public static char BoxBendC = '\u255D';
+        public static char BoxBendD = '\u255A';
+        public static char BoxHoriz = '\u2550';
+        public static char BoxVert = '\u2551';
 
         [STAThread]
         static void Main(string[] args)
@@ -80,6 +89,7 @@ namespace RecursiveHasher
             if (HashFinder(files) != string.Empty)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -146,6 +156,10 @@ namespace RecursiveHasher
             {
                 // ok, so we are not allowed to dig into that directory. Move on.
             }
+            catch (DirectoryNotFoundException)
+            {
+                // odd, but we'll look past it.
+            }
         }
 
         static void LoadSpinTask()
@@ -161,10 +175,50 @@ namespace RecursiveHasher
             }
         }
 
+        public static string currentfilename = string.Empty;
+        public static decimal progresspercent = 0m;
+        public static int FilledBlockCount = 0;
+        public static int EmptyBlockCount = 0;
+        public static bool ProcessFinished = false;
+
+        public static void UpdateProcessProgress()
+        {
+            Console.CursorVisible = false;
+
+            while (!ProcessFinished)
+            {
+                Console.SetCursorPosition(0, 0);
+                Console.WriteLine("\rCalculating file hashes, please wait.");
+                Console.SetCursorPosition(0, 1);
+                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+                Console.WriteLine("\rCurrent File: " + Path.GetFileName(currentfilename.ToString()));
+                Console.SetCursorPosition(0, 2);
+                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.SetCursorPosition(0, 3);
+                Console.WriteLine(BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB);
+                Console.SetCursorPosition(0, 4);
+                Console.WriteLine(BoxVert + new string(' ', 22) 
+                    + progresspercent.ToString() + '%' + new string(' ', 22) + BoxVert);;
+                Console.SetCursorPosition(0, 5);
+                Console.WriteLine(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
+                Console.SetCursorPosition(0, 6);
+                Console.WriteLine(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
+
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Thread.Sleep(25);
+            }
+            Console.CursorVisible = true;
+        }
+
         static string HashFinder(List<string> files)
         {
             try
             {
+                ProcessFinished = false;
+                Task.Factory.StartNew(() => UpdateProcessProgress());
+
                 Console.Clear();
 
                 // Create a unique filename for our output file
@@ -180,12 +234,7 @@ namespace RecursiveHasher
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
                 Parallel.ForEach(files, s =>
                 {
-                    Console.SetCursorPosition(0, 0);
-                    Console.WriteLine("\rCalculating file hashes, please wait.");
-                    Console.SetCursorPosition(0, 1);
-                    Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
-                    Console.WriteLine("\rCurrent File: " + s.ToString());
-
+                    currentfilename = s;
                     FileData fd = new FileData()
                     {
                         FilePath = s,
@@ -202,16 +251,13 @@ namespace RecursiveHasher
                                 fd.FileHash = MD5;
                                 resultdata.Add(fd);
                             }
-                            // get number of filled boxes to display
-                            decimal FillCount_d = currentfile / PBarChunk;
-                            int FillCount = (int)Math.Round(FillCount_d, 0);
-                            int EmptyCount = 50 - FillCount;
-                            decimal p = Math.Round(currentfile / files.Count() * 100m, 2);
 
-                            Console.SetCursorPosition(0, 3);
-                            Console.ForegroundColor = ConsoleColor.Yellow;
-                            Console.WriteLine(new string(BoxFill, FillCount) + new string(BoxEmpty, EmptyCount) + " " + p.ToString() + "%");
-                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            // get number of filled & empty boxes to display
+                            decimal FillCount_d = currentfile / PBarChunk;
+                            FilledBlockCount = (int)Math.Round(FillCount_d, 0);
+                            EmptyBlockCount = 50 - FilledBlockCount;
+                            progresspercent = Math.Round(currentfile / files.Count() * 100m, 2,MidpointRounding.ToEven);
+
                             currentfile++;
                         }
                         catch (UnauthorizedAccessException)
@@ -246,6 +292,10 @@ namespace RecursiveHasher
                 GoSpin = false;
                 MessageBox.Show("Hash calculation task failed with exception.\r\n" + ex.StackTrace, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1);
                 return string.Empty;
+            }
+            finally
+            {
+                ProcessFinished = true;
             }
         }
 
