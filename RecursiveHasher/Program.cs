@@ -89,7 +89,7 @@ namespace RecursiveHasher
             if (HashFinder(files) != string.Empty)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+                Console.SetCursorPosition(0, 8);
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -101,7 +101,6 @@ namespace RecursiveHasher
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
             }
-
         }
 
         static List<string> FileList()
@@ -152,14 +151,8 @@ namespace RecursiveHasher
                     .ToList()
                     .ForEach(s => AddFiles(s, files));
             }
-            catch (UnauthorizedAccessException)
-            {
-                // ok, so we are not allowed to dig into that directory. Move on.
-            }
-            catch (DirectoryNotFoundException)
-            {
-                // odd, but we'll look past it.
-            }
+            catch (UnauthorizedAccessException) { /* ok, so we are not allowed to dig into that directory. Move on. */ }
+            catch (DirectoryNotFoundException) { /* odd, but we'll look past it. */ }
         }
 
         static void LoadSpinTask()
@@ -189,18 +182,24 @@ namespace RecursiveHasher
             {
                 Console.SetCursorPosition(0, 0);
                 Console.WriteLine("\rCalculating file hashes, please wait.");
+
                 Console.SetCursorPosition(0, 1);
                 Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
                 Console.WriteLine("\rCurrent File: " + Path.GetFileName(currentfilename.ToString()));
+
                 Console.SetCursorPosition(0, 2);
                 Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
 
+                // Draw progressbar
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.SetCursorPosition(0, 3);
-                Console.WriteLine(BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB);
+                string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
+                Console.WriteLine(toprow);
+
+                string ppercent = progresspercent.ToString() + '%';
                 Console.SetCursorPosition(0, 4);
-                Console.WriteLine(BoxVert + new string(' ', 22) 
-                    + progresspercent.ToString() + '%' + new string(' ', 22) + BoxVert);;
+                Console.WriteLine(BoxVert + new string(' ', 22) + ppercent + new string(' ', (toprow.Length / 2) - (ppercent.Length-2)) + BoxVert);
+
                 Console.SetCursorPosition(0, 5);
                 Console.WriteLine(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
                 Console.SetCursorPosition(0, 6);
@@ -214,6 +213,7 @@ namespace RecursiveHasher
 
         static string HashFinder(List<string> files)
         {
+            decimal CompletedFileCount = 1;
             try
             {
                 ProcessFinished = false;
@@ -225,7 +225,6 @@ namespace RecursiveHasher
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
-                decimal currentfile = 1;
                 decimal PBarChunk = files.Count / (decimal)50;
 
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
@@ -253,12 +252,12 @@ namespace RecursiveHasher
                             }
 
                             // get number of filled & empty boxes to display
-                            decimal FillCount_d = currentfile / PBarChunk;
-                            FilledBlockCount = (int)Math.Round(FillCount_d, 0);
+                            decimal FillCount_d = CompletedFileCount / PBarChunk;
+                            FilledBlockCount = (int)Math.Round(FillCount_d, 0,MidpointRounding.AwayFromZero);
                             EmptyBlockCount = 50 - FilledBlockCount;
-                            progresspercent = Math.Round(currentfile / files.Count() * 100m, 2,MidpointRounding.ToEven);
+                            progresspercent = Math.Round(CompletedFileCount / files.Count() * 100m, 2);
 
-                            currentfile++;
+                            CompletedFileCount++;
                         }
                         catch (UnauthorizedAccessException)
                         {
@@ -274,8 +273,12 @@ namespace RecursiveHasher
                     }
                 });
 
+                progresspercent = 100;
+                FilledBlockCount = 50;
+
                 // Write computed hashes to .csv on desktop
-                Console.WriteLine("");
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.SetCursorPosition(0, 7);
                 Console.WriteLine("\rWriting results to disk");
                 using (var sw = new StreamWriter(LogPath))
                 {
@@ -433,8 +436,6 @@ namespace RecursiveHasher
             Console.WriteLine("Press any key to exit.");
             Console.ReadKey();
         }
-
-
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
         {
