@@ -38,16 +38,27 @@ namespace RecursiveHasher
         public static char BoxHoriz = '\u2550';
         public static char BoxVert = '\u2551';
 
+        public static readonly int PBarBlockCapacity = 64;
+
         [STAThread]
         static void Main(string[] args)
         {
             try
             {
+                //DEBUG
+                //ProcessFinished = false;
+                //progresspercent = 0;
+                //EmptyBlockCount = PBarBlockCapacity;
+                //FilledBlockCount = 0;
+                //UpdateProcessProgress();
+                //DEBUG
+
+                Console.SetBufferSize(Console.WindowWidth, Console.WindowHeight);
                 Console.OutputEncoding = Encoding.Unicode;
 
-                Task.Factory.StartNew(() => LoadSpinTask());
+                Task.Factory.StartNew(() => SpinTask());
 
-                Console.Title = "Recursive MD5 Hasher";
+                Console.Title = "MD5 Hasher";
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.BackgroundColor = ConsoleColor.Black;
                 Console.Clear();
@@ -86,10 +97,10 @@ namespace RecursiveHasher
             }
             Stopwatch stopwatch = Stopwatch.StartNew();
 
+            Console.SetCursorPosition(0, 9);
             if (HashFinder(files) != string.Empty)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.SetCursorPosition(0, 8);
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -155,7 +166,7 @@ namespace RecursiveHasher
             catch (DirectoryNotFoundException) { /* odd, but we'll look past it. */ }
         }
 
-        static void LoadSpinTask()
+        static void SpinTask()
         {
             while (true)
             {
@@ -178,6 +189,10 @@ namespace RecursiveHasher
         {
             Console.CursorVisible = false;
 
+            progresspercent = 0;
+            EmptyBlockCount = PBarBlockCapacity;
+            FilledBlockCount = 0;
+
             while (!ProcessFinished)
             {
                 Console.SetCursorPosition(0, 0);
@@ -191,14 +206,16 @@ namespace RecursiveHasher
                 Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
 
                 // Draw progressbar
-                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.ForegroundColor = ConsoleColor.White;
                 Console.SetCursorPosition(0, 3);
                 string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
                 Console.WriteLine(toprow);
 
-                string ppercent = progresspercent.ToString() + '%';
+                string ppercent = progresspercent.ToString() + '%';                                            // current prog value
+                string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;                    // first portion including percent
+                string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;                            // second portion including final box char
                 Console.SetCursorPosition(0, 4);
-                Console.WriteLine(BoxVert + new string(' ', 22) + ppercent + new string(' ', (toprow.Length / 2) - (ppercent.Length-2)) + BoxVert);
+                Console.WriteLine(firsthalf + secondhalf);
 
                 Console.SetCursorPosition(0, 5);
                 Console.WriteLine(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
@@ -225,7 +242,7 @@ namespace RecursiveHasher
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
-                decimal PBarChunk = files.Count / (decimal)50;
+                decimal PBarChunk = files.Count / (decimal)PBarBlockCapacity;
 
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
@@ -254,7 +271,7 @@ namespace RecursiveHasher
                             // get number of filled & empty boxes to display
                             decimal FillCount_d = CompletedFileCount / PBarChunk;
                             FilledBlockCount = (int)Math.Round(FillCount_d, 0,MidpointRounding.AwayFromZero);
-                            EmptyBlockCount = 50 - FilledBlockCount;
+                            EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
                             progresspercent = Math.Round(CompletedFileCount / files.Count() * 100m, 2);
 
                             CompletedFileCount++;
@@ -274,11 +291,11 @@ namespace RecursiveHasher
                 });
 
                 progresspercent = 100;
-                FilledBlockCount = 50;
+                FilledBlockCount = PBarBlockCapacity;
 
                 // Write computed hashes to .csv on desktop
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.SetCursorPosition(0, 7);
+                Console.SetCursorPosition(0, 8);
                 Console.WriteLine("\rWriting results to disk");
                 using (var sw = new StreamWriter(LogPath))
                 {
@@ -313,128 +330,156 @@ namespace RecursiveHasher
 
             // Get two files for comparison
             Console.Clear();
-            while (FilesAdded < 2)
+
+            try
             {
-                if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified / with files suspected missing)"); }
-                if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against / without deleted files)"); }
-
-                OpenFileDialog FileSelect = new OpenFileDialog();
-                FileSelect.ShowDialog();
-
-                if (FileSelect.FileName != string.Empty)
+                while (FilesAdded < 2)
                 {
-                    ComparisonFiles.Add(FileSelect.FileName);
-                    FilesAdded++;
+                    if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified / with files suspected missing)"); }
+                    if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against / without deleted files)"); }
+
+                    OpenFileDialog FileSelect = new OpenFileDialog();
+                    FileSelect.ShowDialog();
+
+                    if (FileSelect.FileName != string.Empty)
+                    {
+                        ComparisonFiles.Add(FileSelect.FileName);
+                        FilesAdded++;
+                    }
+                    else
+                    {
+                        Console.Clear();
+                        Console.WriteLine("No file was selected.");
+                    }
+                }
+
+                Console.WriteLine("\r\rWorking");
+                GoSpin = true;
+
+                // Read all selected files into memory
+                for (int i = 0; i < ComparisonFiles.Count; i++)
+                {
+                    using (var reader = new StreamReader(ComparisonFiles[i]))
+                    using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
+                    {
+                        if (i == 0) { FileDataA = csv.GetRecords<FileData>().ToList(); }
+                        else if (i == 1) { FileDataB = csv.GetRecords<FileData>().ToList(); }
+                    }
+                }
+
+                // Generate a list of file hash differences between all files read.
+                List<FileData> FileDifferences = null;
+                Thread queryThread = new Thread(() =>
+                {
+                    FileDifferences = FileDataB
+                        .AsParallel()
+                        .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))
+                        .ToList();
+                });
+
+                queryThread.Start();
+
+                if (!queryThread.Join(TimeSpan.FromSeconds(4800)))
+                {
+                    queryThread.Abort(); // Terminate the thread
+                    Console.WriteLine("Query timed out.");
                 }
                 else
                 {
-                    Console.Clear();
-                    Console.WriteLine("No file was selected.");
+                    Console.WriteLine("Query completed successfully.");
                 }
-            }
 
-            GoSpin = true;
-            Console.WriteLine("Working");
-
-            // Read all selected files into memory
-            for (int i = 0; i < ComparisonFiles.Count; i++)
-            {
-                using (var reader = new StreamReader(ComparisonFiles[i]))
-                using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
+                if (FileDifferences.Count == 0)
                 {
-                    if (i == 0) { FileDataA = csv.GetRecords<FileData>().ToList(); }
-                    else if (i == 1) { FileDataB = csv.GetRecords<FileData>().ToList(); }
+                    GoSpin = false;
+                    Thread.Sleep(250);
+
+                    Console.WriteLine("No differences found, press a key to compare in reverse direction.");
+                    Console.ReadKey();
+                    FileDifferences = FileDataA
+                    .Where(x => !FileDataB.Any(y => y.FileHash == x.FileHash))
+                    .ToList();
                 }
-            }
 
-            // Generate a list of file hash differences between all files read.
-            List<FileData> FileDifferences = FileDataB
-                .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))
-                .ToList();
-
-            if (FileDifferences.Count == 0)
-            {
                 GoSpin = false;
                 Thread.Sleep(250);
 
-                Console.WriteLine("No differences found, press a key to compare in reverse direction.");
-                Console.ReadKey();
-                FileDifferences = FileDataA
-                .Where(x => !FileDataB.Any(y => y.FileHash == x.FileHash))
-                .ToList();
-            }
-
-            GoSpin = false;
-            Thread.Sleep(250);
-
-            Console.Clear();
-            if (FileDifferences.Count > 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine(FileDifferences.Count().ToString() + " file differences found.");
-                Console.WriteLine("Press C to copy differences to folder on Desktop.");
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("Press any other key to exit.");
-
-                ConsoleKeyInfo op = Console.ReadKey(true);
-                if (op.KeyChar.ToString().ToUpper() == "C")
+                Console.Clear();
+                if (FileDifferences.Count > 0)
                 {
-                    GoSpin = true;
-                    Console.WriteLine("Copying data, please wait");
-
-                    string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
-                    if (!Directory.Exists(dfolder))
-                    {
-                        Directory.CreateDirectory(dfolder);
-                    }
-                    
-                    // Copy file differences to folder on desktop
-                    foreach (FileData diff in FileDifferences)
-                    {
-                        string fname = string.Empty;
-                        string OriginalFileName = Path.GetFileName(diff.FilePath);
-
-                        // in the event of duplicate photos, check that filename is unique...
-                        if (File.Exists(dfolder + OriginalFileName))
-                        {
-                           fname = FilenameGenerator(dfolder,OriginalFileName,1024);
-                        }
-                        else { fname = dfolder + OriginalFileName; }
-
-                        // Copy file to directory, NOT overwriting.
-                        File.Copy(diff.FilePath, fname, false);
-                    }
-
-                    string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
-
-                    using (var sw = new StreamWriter(DiffResultPath))
-                    {
-                        using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
-                        {
-                            csv.WriteRecords(FileDifferences);
-                        }
-                    }
-
-                    GoSpin = false;
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.Clear();
-                    Console.WriteLine("Copy operation finished successfully.");
+                    Console.WriteLine(FileDifferences.Count().ToString() + " file differences found.");
+                    Console.WriteLine("Press C to copy differences to folder on Desktop.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine("Press any other key to exit.");
+
+                    ConsoleKeyInfo op = Console.ReadKey(true);
+                    if (op.KeyChar.ToString().ToUpper() == "C")
+                    {
+                        GoSpin = true;
+                        Console.WriteLine("Copying data, please wait");
+
+                        string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
+                        if (!Directory.Exists(dfolder))
+                        {
+                            Directory.CreateDirectory(dfolder);
+                        }
+
+                        // Copy file differences to folder on desktop
+                        foreach (FileData diff in FileDifferences)
+                        {
+                            string fname = string.Empty;
+                            string OriginalFileName = Path.GetFileName(diff.FilePath);
+
+                            // in the event of duplicate photos, check that filename is unique...
+                            if (File.Exists(dfolder + OriginalFileName))
+                            {
+                                fname = FilenameGenerator(dfolder, OriginalFileName, 1024);
+                            }
+                            else { fname = dfolder + OriginalFileName; }
+
+                            // Copy file to directory, NOT overwriting.
+                            File.Copy(diff.FilePath, fname, false);
+                        }
+
+                        string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
+
+                        using (var sw = new StreamWriter(DiffResultPath))
+                        {
+                            using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
+                            {
+                                csv.WriteRecords(FileDifferences);
+                            }
+                        }
+
+                        GoSpin = false;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Clear();
+                        Console.WriteLine("Copy operation finished successfully.");
+                    }
+                    else
+                    {
+                        Environment.Exit(0);
+                    }
                 }
                 else
                 {
-                    Environment.Exit(0);
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("No file differences were found!");
                 }
-            }
-            else
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("No file differences were found!");
-            }
 
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("");
-            Console.WriteLine("Press any key to exit.");
-            Console.ReadKey();
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("");
+                Console.WriteLine("Press any key to exit.");
+                Console.ReadKey();
+            }
+            catch (Exception ex)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(ex.Message);
+                Console.ReadKey();
+            }
         }
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
