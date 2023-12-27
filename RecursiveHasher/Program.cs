@@ -14,11 +14,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+
+using static RecursiveHasher.NativeMethods;
 
 namespace RecursiveHasher
 {
@@ -45,6 +48,11 @@ namespace RecursiveHasher
         {
             try
             {
+                Console.OutputEncoding = Encoding.Unicode;
+                Console.CursorVisible = false;
+
+                Console.SetWindowSize(100, 20);
+
                 //DEBUG
                 //ProcessFinished = false;
                 //progresspercent = 0;
@@ -53,19 +61,46 @@ namespace RecursiveHasher
                 //UpdateProcessProgress();
                 //DEBUG
 
-                Console.SetBufferSize(Console.WindowWidth, Console.WindowHeight);
-                Console.OutputEncoding = Encoding.Unicode;
+                IntPtr handle = GetConsoleWindow();
+                IntPtr sysMenu = GetSystemMenu(handle, false);
 
-                Task.Factory.StartNew(() => SpinTask());
+                if (handle != IntPtr.Zero)
+                {
+                    //DeleteMenu(sysMenu, SC_CLOSE, MF_BYCOMMAND);
+                    //DeleteMenu(sysMenu, SC_MINIMIZE, MF_BYCOMMAND);
+                   DeleteMenu(sysMenu, SC_MAXIMIZE, MF_BYCOMMAND);
+                   DeleteMenu(sysMenu, SC_SIZE, MF_BYCOMMAND);//resize
+                }
+
+                // Set font
+                CONSOLE_FONT_INFO_EX consoleFont = new CONSOLE_FONT_INFO_EX
+                {
+                    cbSize = Marshal.SizeOf<CONSOLE_FONT_INFO_EX>(),
+                    nFont = 0,
+                    dwFontSize = new COORD { X = 14, Y = 28 }, // Set your desired font size
+                    FontFamily = 0,
+                    FontWeight = 400,
+                    FaceName = "Courier New" // Set your desired font face
+                };
+
+                IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_OUTPUT_HANDLE);
+                int result = SetCurrentConsoleFontEx(consoleHandle, false, ref consoleFont);
+                
+                Console.SetBufferSize(Console.WindowWidth, Console.WindowHeight);
 
                 Console.Title = "MD5 Hasher";
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.BackgroundColor = ConsoleColor.Black;
+
                 Console.Clear();
 
                 Console.WriteLine("Press D to select a directory.");
                 Console.WriteLine("Press C to open files for comparison.");
-                
+
+                Task.Factory.StartNew(() => SpinTask());
+
+                QuickEditMode(false);
+
                 ConsoleKeyInfo op = Console.ReadKey(true);
                 switch (op.KeyChar.ToString().ToUpper())
                 {
@@ -82,6 +117,28 @@ namespace RecursiveHasher
                 Console.WriteLine(ex.ToString());
                 Console.ReadKey(true);
             }
+        }
+
+        /// <summary>
+        /// Enables/disables console features to prevent user accidentally stopping process by selecting window text
+        /// </summary>
+        /// <param name="Enable"></param>
+        public static void QuickEditMode(bool Enable)
+        {
+            IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_INPUT_HANDLE);
+            UInt32 consoleMode;
+
+            GetConsoleMode(consoleHandle, out consoleMode);
+            if (Enable)
+            {
+                consoleMode |= ((uint)ConsoleMode.ENABLE_QUICK_EDIT_MODE);
+            }
+            else
+            {
+                consoleMode &= ~((uint)ConsoleMode.ENABLE_QUICK_EDIT_MODE);
+            }
+            consoleMode |= ((uint)ConsoleMode.ENABLE_EXTENDED_FLAGS);
+            SetConsoleMode(consoleHandle, consoleMode);
         }
 
         static void DirectoryAnalysis()
@@ -101,6 +158,7 @@ namespace RecursiveHasher
             if (HashFinder(files) != string.Empty)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -136,7 +194,7 @@ namespace RecursiveHasher
                 {
                     RootDirectory = hf.SelectedPath;
                     Console.WriteLine("Selected path: '" + RootDirectory + "'");
-                    Console.WriteLine("Reading directory info");
+                    Console.Write("\rReading directory info");
 
                     GoSpin = true;
                     AddFiles(hf.SelectedPath, files);
@@ -187,8 +245,6 @@ namespace RecursiveHasher
 
         public static void UpdateProcessProgress()
         {
-            Console.CursorVisible = false;
-
             progresspercent = 0;
             EmptyBlockCount = PBarBlockCapacity;
             FilledBlockCount = 0;
@@ -196,36 +252,40 @@ namespace RecursiveHasher
             while (!ProcessFinished)
             {
                 Console.SetCursorPosition(0, 0);
+                Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
                 Console.WriteLine("\rCalculating file hashes, please wait.");
 
                 Console.SetCursorPosition(0, 1);
-                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
-                Console.WriteLine("\rCurrent File: " + Path.GetFileName(currentfilename.ToString()));
+                Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+                Console.WriteLine("Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 10));
 
                 Console.SetCursorPosition(0, 2);
-                Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+                Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
 
-                // Draw progressbar
+                // Draw progressbar to console window...
                 Console.ForegroundColor = ConsoleColor.White;
+
                 Console.SetCursorPosition(0, 3);
                 string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
                 Console.WriteLine(toprow);
 
                 string ppercent = progresspercent.ToString() + '%';                                            // current prog value
-                string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;                    // first portion including percent
-                string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;                            // second portion including final box char
+                string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;  // first portion including percent
+                string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;           // second portion including final box char
                 Console.SetCursorPosition(0, 4);
                 Console.WriteLine(firsthalf + secondhalf);
 
                 Console.SetCursorPosition(0, 5);
                 Console.WriteLine(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
+
                 Console.SetCursorPosition(0, 6);
                 Console.WriteLine(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
 
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Thread.Sleep(25);
+                Thread.Sleep(60);
             }
-            Console.CursorVisible = true;
+            Console.SetCursorPosition(0, 2);
+            Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
         }
 
         static string HashFinder(List<string> files)
@@ -242,7 +302,7 @@ namespace RecursiveHasher
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
-                decimal PBarChunk = files.Count / (decimal)PBarBlockCapacity;
+                decimal PBarChunk = Math.Ceiling(files.Count / (decimal)PBarBlockCapacity);
 
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
@@ -269,10 +329,9 @@ namespace RecursiveHasher
                             }
 
                             // get number of filled & empty boxes to display
-                            decimal FillCount_d = CompletedFileCount / PBarChunk;
-                            FilledBlockCount = (int)Math.Round(FillCount_d, 0,MidpointRounding.AwayFromZero);
+                            FilledBlockCount = (int)Math.Ceiling(CompletedFileCount / PBarChunk);
                             EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
-                            progresspercent = Math.Round(CompletedFileCount / files.Count() * 100m, 2);
+                            progresspercent = Math.Round(CompletedFileCount / files.Count() * 100m,2);
 
                             CompletedFileCount++;
                         }
@@ -296,7 +355,9 @@ namespace RecursiveHasher
                 // Write computed hashes to .csv on desktop
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.SetCursorPosition(0, 8);
+                Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
                 Console.WriteLine("\rWriting results to disk");
+
                 using (var sw = new StreamWriter(LogPath))
                 {
                     using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
@@ -335,8 +396,8 @@ namespace RecursiveHasher
             {
                 while (FilesAdded < 2)
                 {
-                    if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison. (Folder to be verified / with files suspected missing)"); }
-                    if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison. ('Known-Good' to be verified against / without deleted files)"); }
+                    if (FilesAdded == 0) { Console.WriteLine("Select first file for comparison."); }
+                    if (FilesAdded == 1) { Console.WriteLine("Select second file for comparison."); }
 
                     OpenFileDialog FileSelect = new OpenFileDialog();
                     FileSelect.ShowDialog();
@@ -353,7 +414,7 @@ namespace RecursiveHasher
                     }
                 }
 
-                Console.WriteLine("\r\rWorking");
+                Console.Write("\r\rWorking");
                 GoSpin = true;
 
                 // Read all selected files into memory
@@ -382,11 +443,11 @@ namespace RecursiveHasher
                 if (!queryThread.Join(TimeSpan.FromSeconds(4800)))
                 {
                     queryThread.Abort(); // Terminate the thread
-                    Console.WriteLine("Query timed out.");
+                    Console.WriteLine("\rQuery timed out.");
                 }
                 else
                 {
-                    Console.WriteLine("Query completed successfully.");
+                    Console.WriteLine("\rQuery completed successfully.");
                 }
 
                 if (FileDifferences.Count == 0)
@@ -394,7 +455,7 @@ namespace RecursiveHasher
                     GoSpin = false;
                     Thread.Sleep(250);
 
-                    Console.WriteLine("No differences found, press a key to compare in reverse direction.");
+                    Console.WriteLine("\rNo differences found, press a key to compare in reverse direction.");
                     Console.ReadKey();
                     FileDifferences = FileDataA
                     .Where(x => !FileDataB.Any(y => y.FileHash == x.FileHash))
@@ -518,7 +579,15 @@ namespace RecursiveHasher
             throw new Exception("Could not create unique filename in " + maxAttempts + " attempts");
         }
     }
-
+    internal static class StringExtensions
+    {
+        public static string Truncate(this string value, int maxLength, string truncationSuffix = "…")
+        {
+            return value?.Length > maxLength
+                ? value.Substring(0, maxLength) + truncationSuffix
+                : value;
+        }
+    }
     public class FileData
     {
         public string FilePath { get; set; }
