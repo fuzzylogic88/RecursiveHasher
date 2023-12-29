@@ -50,16 +50,7 @@ namespace RecursiveHasher
             {
                 Console.OutputEncoding = Encoding.Unicode;
                 Console.CursorVisible = false;
-
                 Console.SetWindowSize(100, 20);
-
-                //DEBUG
-                //ProcessFinished = false;
-                //progresspercent = 0;
-                //EmptyBlockCount = PBarBlockCapacity;
-                //FilledBlockCount = 0;
-                //UpdateProcessProgress();
-                //DEBUG
 
                 IntPtr handle = GetConsoleWindow();
                 IntPtr sysMenu = GetSystemMenu(handle, false);
@@ -92,24 +83,50 @@ namespace RecursiveHasher
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.BackgroundColor = ConsoleColor.Black;
 
-                Console.Clear();
-
-                Console.WriteLine("Press D to select a directory.");
-                Console.WriteLine("Press C to open files for comparison.");
-
                 Task.Factory.StartNew(() => SpinTask());
 
                 QuickEditMode(false);
 
-                ConsoleKeyInfo op = Console.ReadKey(true);
-                switch (op.KeyChar.ToString().ToUpper())
+                if (args.Length == 0)
                 {
-                    case "D":
-                        DirectoryAnalysis();
-                        break;
-                    case "C":
-                        ResultComparison();
-                        break;
+                    while (true)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine("Press D to select a directory.");
+                        Console.WriteLine("Press C to open files for comparison.");
+                        Console.WriteLine("");
+                        Console.WriteLine("Press E to exit.");
+
+                        ConsoleKeyInfo op = Console.ReadKey(true);
+                        switch (op.KeyChar.ToString().ToUpper())
+                        {
+                            case "D":
+                                DirectoryAnalysis(string.Empty);
+                                break;
+                            case "C":
+                                ResultComparison();
+                                break;
+                            case "E":
+                                Environment.Exit(0);
+                                break;
+                            default:
+                                Console.Clear();
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("Unexpected input. Try again.");
+                                Console.WriteLine("");
+                                break;
+                        }
+                    }
+                }
+                else
+                {
+                    if (Directory.Exists(args[0]))
+                    {
+                        DirectoryAnalysis(args[0]);
+                    }
+
+
+                    else { Environment.Exit(0); }
                 }
             }
             catch (Exception ex)
@@ -141,17 +158,18 @@ namespace RecursiveHasher
             SetConsoleMode(consoleHandle, consoleMode);
         }
 
-        static void DirectoryAnalysis()
+        static void DirectoryAnalysis(string argDir)
         {
             List<string> files = new List<string>();
             while (!files.Any())
             {
-                files = FileList();
+                files = FileList(argDir);
                 if (!files.Any())
                 {
                     Console.WriteLine("Directory contains no files. Please choose another directory.");
                 }
             }
+
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             Console.SetCursorPosition(0, 9);
@@ -172,40 +190,48 @@ namespace RecursiveHasher
             }
         }
 
-        static List<string> FileList()
+        static List<string> FileList(string argDir)
         {
             Console.Clear();
             Console.WriteLine("Select a directory to read...");
 
-            RootDirectory = string.Empty;
             List<string> files = new List<string>();
 
-            while (RootDirectory == string.Empty)
+            RootDirectory = string.Empty;
+
+            // if we weren't passed in a folder by the user
+            if (string.IsNullOrEmpty(argDir))
             {
-                FolderBrowserDialog hf = new FolderBrowserDialog()
+                while (RootDirectory == string.Empty)
                 {
-                    RootFolder = Environment.SpecialFolder.Desktop,
-                    Description = "Select a folder.",
-                    ShowNewFolderButton = true,
-                };
-                hf.ShowDialog();
+                    FolderBrowserDialog hf = new FolderBrowserDialog()
+                    {
+                        RootFolder = Environment.SpecialFolder.Desktop,
+                        Description = "Select a folder.",
+                        ShowNewFolderButton = true,
+                    };
+                    hf.ShowDialog();
 
-                if (hf.SelectedPath != string.Empty)
-                {
-                    RootDirectory = hf.SelectedPath;
-                    Console.WriteLine("Selected path: '" + RootDirectory + "'");
-                    Console.Write("\rReading directory info");
-
-                    GoSpin = true;
-                    AddFiles(hf.SelectedPath, files);
-                    GoSpin = false;
-                }
-                else
-                {
-                    Console.WriteLine("No directory selected. Please select a folder.");
-                    Console.ReadKey(true);
+                    if (hf.SelectedPath != string.Empty)
+                    {
+                        RootDirectory = hf.SelectedPath;
+                    }
+                    else
+                    {
+                        Console.WriteLine("No directory selected. Please select a folder.");
+                        Console.ReadKey(true);
+                    }
                 }
             }
+            else { RootDirectory = argDir; }
+
+            Console.WriteLine("Selected path: '" + RootDirectory + "'");
+            Console.Write("\rReading directory info");
+
+            GoSpin = true;
+            AddFiles(RootDirectory, files);
+            GoSpin = false;
+
             return files;
         }
         private static void AddFiles(string path, IList<string> files)
@@ -290,7 +316,7 @@ namespace RecursiveHasher
 
         static string HashFinder(List<string> files)
         {
-            decimal CompletedFileCount = 1;
+            int CompletedFileCount = 0;
             try
             {
                 ProcessFinished = false;
@@ -302,20 +328,18 @@ namespace RecursiveHasher
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
-                decimal PBarChunk = Math.Ceiling(files.Count / (decimal)PBarBlockCapacity);
-
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
                 // Compute MD5 hashes for each file in selected directory
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
                 Parallel.ForEach(files, s =>
                 {
-                    currentfilename = s;
-                    FileData fd = new FileData()
-                    {
-                        FilePath = s,
-                        DateOfAnalysis = DateTime.Now.ToString()
-                    };
+                currentfilename = s;
+                FileData fd = new FileData()
+                {
+                    FilePath = s,
+                    DateOfAnalysis = DateTime.Now.ToString()
+                };
 
                     using (MD5 MD5hsh = MD5.Create())
                     {
@@ -329,11 +353,9 @@ namespace RecursiveHasher
                             }
 
                             // get number of filled & empty boxes to display
-                            FilledBlockCount = (int)Math.Ceiling(CompletedFileCount / PBarChunk);
+                            FilledBlockCount = (int)((decimal)CompletedFileCount / files.Count)*PBarBlockCapacity;
                             EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
-                            progresspercent = Math.Round(CompletedFileCount / files.Count() * 100m,2);
-
-                            CompletedFileCount++;
+                            progresspercent = Math.Round((decimal)CompletedFileCount / files.Count() * 100m,2);
                         }
                         catch (UnauthorizedAccessException)
                         {
@@ -346,17 +368,17 @@ namespace RecursiveHasher
                             fd.FileHash = "File in use.";
                             resultdata.Add(fd);
                         }
+                        finally { Interlocked.Increment(ref CompletedFileCount); }
                     }
                 });
 
-                progresspercent = 100;
-                FilledBlockCount = PBarBlockCapacity;
+                //FilledBlockCount = PBarBlockCapacity;
 
                 // Write computed hashes to .csv on desktop
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.SetCursorPosition(0, 8);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
-                Console.WriteLine("\rWriting results to disk");
+                Console.WriteLine("Writing results to disk");
 
                 using (var sw = new StreamWriter(LogPath))
                 {
@@ -376,6 +398,7 @@ namespace RecursiveHasher
             }
             finally
             {
+                Task.Delay(500);
                 ProcessFinished = true;
             }
         }
@@ -455,7 +478,7 @@ namespace RecursiveHasher
                     GoSpin = false;
                     Thread.Sleep(250);
 
-                    Console.WriteLine("\rNo differences found, press a key to compare in reverse direction.");
+                    Console.WriteLine("\rNo differences found.");
                     Console.ReadKey();
                     FileDifferences = FileDataA
                     .Where(x => !FileDataB.Any(y => y.FileHash == x.FileHash))
@@ -500,7 +523,17 @@ namespace RecursiveHasher
                             else { fname = dfolder + OriginalFileName; }
 
                             // Copy file to directory, NOT overwriting.
-                            File.Copy(diff.FilePath, fname, false);
+                            try
+                            {
+                                File.Copy(diff.FilePath, fname, false);
+                            }
+                            catch (IOException ex)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("Could not copy file: " + diff.FilePath);
+                                Console.ForegroundColor = ConsoleColor.White;
+                            }
+
                         }
 
                         string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
@@ -515,7 +548,6 @@ namespace RecursiveHasher
 
                         GoSpin = false;
                         Console.ForegroundColor = ConsoleColor.Green;
-                        Console.Clear();
                         Console.WriteLine("Copy operation finished successfully.");
                     }
                     else

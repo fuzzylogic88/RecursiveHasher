@@ -1,9 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿/* 
+ * RecursiveHasher
+ * Daniel Green, 2022
+ * 
+ * Computes MD5 hashes for all files in directory/subdirectory,
+ * Compares output files to determine if files were missing / deleted.
+ */
+
+using System;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace RecursiveHasher
 {
@@ -59,7 +63,6 @@ namespace RecursiveHasher
 
         [DllImport("kernel32.dll", ExactSpelling = true)]
         public static extern IntPtr GetConsoleWindow();
-
 
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
