@@ -45,8 +45,6 @@ namespace RecursiveHasher
 
         public static readonly int PBarBlockCapacity = 64;
 
-        static ExceptionBucket exceptionBucket = new ExceptionBucket();
-
         [STAThread]
         static void Main(string[] args)
         {
@@ -54,17 +52,15 @@ namespace RecursiveHasher
             {
                 Console.OutputEncoding = Encoding.Unicode;
                 Console.CursorVisible = false;
-                Console.SetWindowSize(100, 20);
+                Console.SetWindowSize(100, 35);
 
                 IntPtr handle = GetConsoleWindow();
                 IntPtr sysMenu = GetSystemMenu(handle, false);
 
                 if (handle != IntPtr.Zero)
                 {
-                    //DeleteMenu(sysMenu, SC_CLOSE, MF_BYCOMMAND);
-                    //DeleteMenu(sysMenu, SC_MINIMIZE, MF_BYCOMMAND);
                    DeleteMenu(sysMenu, SC_MAXIMIZE, MF_BYCOMMAND);
-                   DeleteMenu(sysMenu, SC_SIZE, MF_BYCOMMAND);//resize
+                   DeleteMenu(sysMenu, SC_SIZE, MF_BYCOMMAND);
                 }
 
                 // Set font
@@ -267,6 +263,8 @@ namespace RecursiveHasher
             }
         }
 
+        public static ConcurrentQueue<ExceptionData> eBucket = new ConcurrentQueue<ExceptionData>();
+
         public static string currentfilename = string.Empty;
         public static decimal progresspercent = 0m;
         public static int FilledBlockCount = 0;
@@ -280,6 +278,9 @@ namespace RecursiveHasher
             progresspercent = 0;
             EmptyBlockCount = PBarBlockCapacity;
             FilledBlockCount = 0;
+
+            // starting row for exceptions to be printed on
+            int consolePos = 10;
 
             while (!ProcessFinished)
             {
@@ -318,7 +319,21 @@ namespace RecursiveHasher
                 Console.WriteLine(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
 
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Thread.Sleep(40);
+
+                // check for pending exceptions to post to UI
+                while (eBucket.TryDequeue(out ExceptionData r))
+                {
+                    consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
+                    if (consolePos == 0) { consolePos = 10; }
+
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.SetCursorPosition(0, consolePos);
+                    Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+                    Console.WriteLine("Hash error: " + r.Exception.GetType().ToString() + " - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth / 3));
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                }
+
+                Thread.Sleep(10);
             }
             Console.SetCursorPosition(0, 2);
             Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
@@ -370,7 +385,7 @@ namespace RecursiveHasher
                         }
                         catch (Exception ex)
                         {
-                            exceptionBucket.Enqueue(new ExceptionData { Exception = ex, FilePath = fd.FilePath });
+                            eBucket.Enqueue(new ExceptionData { Exception = ex, FilePath = fd.FilePath });
                             if (ex is UnauthorizedAccessException)
                             {
                                 fd.FileHash = "Read access denied.";                     
@@ -427,25 +442,6 @@ namespace RecursiveHasher
             public string FilePath { get; set; }
         }
 
-        public class ExceptionBucket
-        {
-            private ConcurrentQueue<ExceptionData> exceptions = new ConcurrentQueue<ExceptionData>();
-
-            public void Enqueue(ExceptionData exceptionData)
-            {
-                exceptions.Enqueue(exceptionData);
-
-                // Start a task to print the exception asynchronously
-                Task.Run(() => PrintExceptionAsync(exceptionData));
-            }
-
-            private async Task PrintExceptionAsync(ExceptionData exceptionData)
-            {
-                Console.SetCursorPosition(0, 15);
-                //string err = exceptionData.GetType().Name; incorrect 
-                Console.WriteLine($"Hash error: {"ExceptionName"}, File: {StringExtensions.Truncate(Path.GetFileName(exceptionData.FilePath),Console.WindowWidth/2)}");
-            }
-        }
 
         static void ResultComparison()
         {
