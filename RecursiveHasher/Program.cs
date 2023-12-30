@@ -16,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,7 +53,7 @@ namespace RecursiveHasher
             {
                 Console.OutputEncoding = Encoding.Unicode;
                 Console.CursorVisible = false;
-                Console.SetWindowSize(100, 35);
+                Console.SetWindowSize(100, 40);
 
                 IntPtr handle = GetConsoleWindow();
                 IntPtr sysMenu = GetSystemMenu(handle, false);
@@ -68,7 +69,7 @@ namespace RecursiveHasher
                 {
                     cbSize = Marshal.SizeOf<CONSOLE_FONT_INFO_EX>(),
                     nFont = 0,
-                    dwFontSize = new COORD { X = 14, Y = 28 }, // Set your desired font size
+                    dwFontSize = new COORD { X = 12, Y = 24 }, // Set your desired font size
                     FontFamily = 0,
                     FontWeight = 400,
                     FaceName = "Courier New" // Set your desired font face
@@ -87,46 +88,58 @@ namespace RecursiveHasher
 
                 QuickEditMode(false);
 
-                if (args.Length == 0)
+                if (IsAdministrator())
                 {
-                    while (true)
+                    if (args.Length == 0)
                     {
-                        Console.ForegroundColor = ConsoleColor.Cyan;
-                        Console.WriteLine("Press D to select a directory.");
-                        Console.WriteLine("Press C to open files for comparison.");
-                        Console.WriteLine("");
-                        Console.WriteLine("Press E to exit.");
-
-                        ConsoleKeyInfo op = Console.ReadKey(true);
-                        switch (op.KeyChar.ToString().ToUpper())
+                        while (true)
                         {
-                            case "D":
-                                DirectoryAnalysis(string.Empty);
-                                break;
-                            case "C":
-                                ResultComparison();
-                                break;
-                            case "E":
-                                Environment.Exit(0);
-                                break;
-                            default:
-                                Console.Clear();
-                                Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine("Unexpected input. Try again.");
-                                Console.WriteLine("");
-                                break;
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("Press D to select a directory.");
+                            Console.WriteLine("Press C to open files for comparison.");
+                            Console.WriteLine("");
+                            Console.WriteLine("Press E to exit.");
+
+                            ConsoleKeyInfo op = Console.ReadKey(true);
+                            switch (op.KeyChar.ToString().ToUpper())
+                            {
+                                case "D":
+                                    DirectoryAnalysis(string.Empty);
+                                    break;
+                                case "C":
+                                    ResultComparison();
+                                    break;
+                                case "E":
+                                    Environment.Exit(0);
+                                    break;
+                                default:
+                                    Console.Clear();
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine("Unexpected input. Try again.");
+                                    Console.WriteLine("");
+                                    break;
+                            }
                         }
+                    }
+                    else
+                    {
+                        if (Directory.Exists(args[0]))
+                        {
+                            DirectoryAnalysis(args[0]);
+                        }
+                        else { Environment.Exit(0); }
                     }
                 }
                 else
                 {
-                    if (Directory.Exists(args[0]))
-                    {
-                        DirectoryAnalysis(args[0]);
-                    }
-
-
-                    else { Environment.Exit(0); }
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.Title = "Error!";
+                    Console.WriteLine("Application not running with administrator privileges!");
+                    Console.WriteLine("");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine("Press any key to exit...");
+                    Console.ReadKey();
+                    Environment.Exit(0);
                 }
             }
             catch (Exception ex)
@@ -134,6 +147,11 @@ namespace RecursiveHasher
                 Console.WriteLine(ex.ToString());
                 Console.ReadKey(true);
             }
+        }
+        public static bool IsAdministrator()
+        {
+            return (new WindowsPrincipal(WindowsIdentity.GetCurrent()))
+                      .IsInRole(WindowsBuiltInRole.Administrator);
         }
 
         /// <summary>
@@ -280,7 +298,7 @@ namespace RecursiveHasher
             FilledBlockCount = 0;
 
             // starting row for exceptions to be printed on
-            int consolePos = 10;
+            int consolePos = 12;
 
             while (!ProcessFinished)
             {
@@ -324,7 +342,7 @@ namespace RecursiveHasher
                 while (eBucket.TryDequeue(out ExceptionData r))
                 {
                     consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
-                    if (consolePos == 0) { consolePos = 10; }
+                    if (consolePos == 0) { consolePos = 12; }
 
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.SetCursorPosition(0, consolePos);
