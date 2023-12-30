@@ -22,6 +22,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using static RecursiveHasher.NativeMethods;
+using static System.Net.WebRequestMethods;
+using File = System.IO.File;
 
 namespace RecursiveHasher
 {
@@ -42,6 +44,8 @@ namespace RecursiveHasher
         public static char BoxVert = '\u2551';
 
         public static readonly int PBarBlockCapacity = 64;
+
+        static ExceptionBucket exceptionBucket = new ExceptionBucket();
 
         [STAThread]
         static void Main(string[] args)
@@ -143,9 +147,8 @@ namespace RecursiveHasher
         public static void QuickEditMode(bool Enable)
         {
             IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_INPUT_HANDLE);
-            UInt32 consoleMode;
 
-            GetConsoleMode(consoleHandle, out consoleMode);
+            GetConsoleMode(consoleHandle, out uint consoleMode);
             if (Enable)
             {
                 consoleMode |= ((uint)ConsoleMode.ENABLE_QUICK_EDIT_MODE);
@@ -172,10 +175,10 @@ namespace RecursiveHasher
 
             Stopwatch stopwatch = Stopwatch.StartNew();
 
-            Console.SetCursorPosition(0, 9);
             if (HashFinder(files) != string.Empty)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
+                Console.SetCursorPosition(0, 9);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
                 Console.WriteLine("Finished in " + stopwatch.Elapsed.ToString() + ".");
                 Console.ReadKey(true);
@@ -184,6 +187,7 @@ namespace RecursiveHasher
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
+                Console.SetCursorPosition(0, 10);
                 Console.WriteLine("Process failed.");
                 Console.ReadKey(true);
                 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -267,6 +271,8 @@ namespace RecursiveHasher
         public static decimal progresspercent = 0m;
         public static int FilledBlockCount = 0;
         public static int EmptyBlockCount = 0;
+        public static int CompletedFileCount = 0;
+        public static int TotalFileCount = 0;
         public static bool ProcessFinished = false;
 
         public static void UpdateProcessProgress()
@@ -277,13 +283,17 @@ namespace RecursiveHasher
 
             while (!ProcessFinished)
             {
+                // get number of filled & empty boxes to display
+                FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
+                EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
+
                 Console.SetCursorPosition(0, 0);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
                 Console.WriteLine("\rCalculating file hashes, please wait.");
 
                 Console.SetCursorPosition(0, 1);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
-                Console.WriteLine("Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 10));
+                Console.WriteLine("Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20));
 
                 Console.SetCursorPosition(0, 2);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
@@ -295,7 +305,7 @@ namespace RecursiveHasher
                 string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
                 Console.WriteLine(toprow);
 
-                string ppercent = progresspercent.ToString() + '%';                                            // current prog value
+                string ppercent = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';                                            // current prog value
                 string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;  // first portion including percent
                 string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;           // second portion including final box char
                 Console.SetCursorPosition(0, 4);
@@ -308,7 +318,7 @@ namespace RecursiveHasher
                 Console.WriteLine(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
 
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Thread.Sleep(60);
+                Thread.Sleep(40);
             }
             Console.SetCursorPosition(0, 2);
             Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
@@ -316,10 +326,11 @@ namespace RecursiveHasher
 
         static string HashFinder(List<string> files)
         {
-            int CompletedFileCount = 0;
             try
             {
                 ProcessFinished = false;
+                TotalFileCount = files.Count();
+
                 Task.Factory.StartNew(() => UpdateProcessProgress());
 
                 Console.Clear();
@@ -328,18 +339,23 @@ namespace RecursiveHasher
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
                 string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
 
+                var parallelOptions = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Environment.ProcessorCount
+                };
+
                 ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
 
                 // Compute MD5 hashes for each file in selected directory
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
-                Parallel.ForEach(files, s =>
+                Parallel.ForEach(files, parallelOptions, s =>
                 {
-                currentfilename = s;
-                FileData fd = new FileData()
-                {
-                    FilePath = s,
-                    DateOfAnalysis = DateTime.Now.ToString()
-                };
+                    currentfilename = s;
+                    FileData fd = new FileData()
+                    {
+                        FilePath = s,
+                        DateOfAnalysis = DateTime.Now.ToString()
+                    };
 
                     using (MD5 MD5hsh = MD5.Create())
                     {
@@ -351,34 +367,36 @@ namespace RecursiveHasher
                                 fd.FileHash = MD5;
                                 resultdata.Add(fd);
                             }
-
-                            // get number of filled & empty boxes to display
-                            FilledBlockCount = (int)((decimal)CompletedFileCount / files.Count)*PBarBlockCapacity;
-                            EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
-                            progresspercent = Math.Round((decimal)CompletedFileCount / files.Count() * 100m,2);
                         }
-                        catch (UnauthorizedAccessException)
+                        catch (Exception ex)
                         {
-                            fd.FileHash = "Read access denied.";
+                            exceptionBucket.Enqueue(new ExceptionData { Exception = ex, FilePath = fd.FilePath });
+                            if (ex is UnauthorizedAccessException)
+                            {
+                                fd.FileHash = "Read access denied.";                     
+                            }
+                            else if (ex is IOException)
+                            {
+                                fd.FileHash = "File in use.";
+                            }
+                            else if (ex is DirectoryNotFoundException)
+                            {
+                                fd.FileHash = "Directory not found.";
+                            }
                             resultdata.Add(fd);
                         }
-
-                        catch (IOException)
+                        finally
                         {
-                            fd.FileHash = "File in use.";
-                            resultdata.Add(fd);
+                            Interlocked.Increment(ref CompletedFileCount);
                         }
-                        finally { Interlocked.Increment(ref CompletedFileCount); }
                     }
                 });
-
-                //FilledBlockCount = PBarBlockCapacity;
 
                 // Write computed hashes to .csv on desktop
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.SetCursorPosition(0, 8);
                 Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
-                Console.WriteLine("Writing results to disk");
+                Console.WriteLine("Writing results to disk...");
 
                 using (var sw = new StreamWriter(LogPath))
                 {
@@ -400,6 +418,32 @@ namespace RecursiveHasher
             {
                 Task.Delay(500);
                 ProcessFinished = true;
+            }
+        }
+
+        public class ExceptionData
+        {
+            public Exception Exception { get; set; }
+            public string FilePath { get; set; }
+        }
+
+        public class ExceptionBucket
+        {
+            private ConcurrentQueue<ExceptionData> exceptions = new ConcurrentQueue<ExceptionData>();
+
+            public void Enqueue(ExceptionData exceptionData)
+            {
+                exceptions.Enqueue(exceptionData);
+
+                // Start a task to print the exception asynchronously
+                Task.Run(() => PrintExceptionAsync(exceptionData));
+            }
+
+            private async Task PrintExceptionAsync(ExceptionData exceptionData)
+            {
+                Console.SetCursorPosition(0, 15);
+                //string err = exceptionData.GetType().Name; incorrect 
+                Console.WriteLine($"Hash error: {"ExceptionName"}, File: {StringExtensions.Truncate(Path.GetFileName(exceptionData.FilePath),Console.WindowWidth/2)}");
             }
         }
 
@@ -527,7 +571,7 @@ namespace RecursiveHasher
                             {
                                 File.Copy(diff.FilePath, fname, false);
                             }
-                            catch (IOException ex)
+                            catch (IOException)
                             {
                                 Console.ForegroundColor = ConsoleColor.Red;
                                 Console.WriteLine("Could not copy file: " + diff.FilePath);
@@ -627,3 +671,4 @@ namespace RecursiveHasher
         public string DateOfAnalysis { get; set; }
     }
 }
+
