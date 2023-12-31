@@ -314,6 +314,7 @@ namespace RecursiveHasher
         {
             // starting row for exceptions to be printed on
             int consolePos = StartingExceptionRow;
+            int row = 0;
             string LastException = string.Empty;
 
             while (true)
@@ -324,7 +325,7 @@ namespace RecursiveHasher
                 {
                     // increment row by one for each failed file, wrapping back to the initial row
                     consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
-                    if (consolePos == 0) { consolePos = 12; }
+                    if (consolePos == 0) { consolePos = StartingExceptionRow; }
 
                     StringBuilder exStrb = new();
                     exStrb.Append(r.Message);
@@ -333,24 +334,26 @@ namespace RecursiveHasher
                     WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
 
                     // If we've printed at least one exception, remove the pointing string from the prior row...
-                    if (consolePos > StartingExceptionRow)
+                    if (exStrb.ToString() != string.Empty)
                     {
-                        WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, consolePos - 1, true, true);
+                        if (consolePos == StartingExceptionRow) { row = Console.WindowHeight - 1; }
+                        else { row = consolePos - 1; }
                     }
                     LastException = exStrb.ToString();
-
-                    // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
-                    if (ClearVisibleExceptions.IsSet)
-                    {
-                        for (int i = consolePos; i < Console.WindowHeight - 1; i++)
-                        {
-                            WriteLineEx(string.Empty, false, null, 0, i, true, false);
-                        }
-                        consolePos = StartingExceptionRow;
-                        ClearVisibleExceptions.Reset();
-                    }
-                    Thread.Sleep(50);
+                    WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, row, true, true);
                 }
+
+                // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
+                if (ClearVisibleExceptions.IsSet)
+                {
+                    consolePos = StartingExceptionRow;
+                    for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                    {
+                        WriteLineEx(string.Empty, false, null, 0, i, true, false);
+                    }
+                    ClearVisibleExceptions.Reset();
+                }
+                Thread.Sleep(50);
             }
         }
 
