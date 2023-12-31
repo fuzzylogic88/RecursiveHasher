@@ -30,38 +30,41 @@ namespace RecursiveHasher
 {
     internal class Program
     {
-        public static bool GoSpin = false;
+        public static Version minWinVersion = new(6, 1);
+
         public static string RootDirectory = string.Empty;
 
         // Semaphore metering access to console position/color/writes 
-        static readonly SemaphoreSlim conSph = new SemaphoreSlim(1, 1);
+        static readonly SemaphoreSlim conSph = new(1, 1);
 
         public static ConsoleColor LastConsoleForeground = ConsoleColor.White;
 
         // box
-        public static char BoxFill = '\u2588';
-        public static char BoxEmpty = '\u2593';
+        public static readonly char BoxFill = '\u2588';
+        public static readonly char BoxEmpty = '\u2593';
 
-        public static char BoxBendA = '\u2554';
-        public static char BoxBendB = '\u2557';
-        public static char BoxBendC = '\u255D';
-        public static char BoxBendD = '\u255A';
-        public static char BoxHoriz = '\u2550';
-        public static char BoxVert = '\u2551';
+        public static readonly char BoxBendA = '\u2554';
+        public static readonly char BoxBendB = '\u2557';
+        public static readonly char BoxBendC = '\u255D';
+        public static readonly char BoxBendD = '\u255A';
+        public static readonly char BoxHoriz = '\u2550';
+        public static readonly char BoxVert = '\u2551';
+
+        public static readonly int StartingExceptionRow = 12;
+        public static readonly string LeftPoint = " <<";
 
         public static readonly int PBarBlockCapacity = 64;
+        public static int FilledBlockCount = 0;
+        public static int EmptyBlockCount = 0;
 
-        // Container for exception data as files fail to be read
-        public static ConcurrentQueue<ExceptionData> eBucket = new ConcurrentQueue<ExceptionData>();
-        public static ManualResetEventSlim ClearVisibleExceptions = new ManualResetEventSlim(false);
-
+        public static ConcurrentQueue<ExceptionData> eBucket = new();
+        public static ManualResetEventSlim ClearVisibleExceptions = new(false);
 
         public static string currentfilename = string.Empty;
         public static decimal progresspercent = 0m;
-        public static int FilledBlockCount = 0;
-        public static int EmptyBlockCount = 0;
         public static int CompletedFileCount = 0;
         public static int TotalFileCount = 0;
+
         public static bool ProcessFinished = false;
 
         [STAThread]
@@ -83,7 +86,7 @@ namespace RecursiveHasher
                 }
 
                 // Set font
-                CONSOLE_FONT_INFO_EX consoleFont = new CONSOLE_FONT_INFO_EX
+                CONSOLE_FONT_INFO_EX consoleFont = new()
                 {
                     cbSize = Marshal.SizeOf<CONSOLE_FONT_INFO_EX>(),
                     nFont = 0,
@@ -102,59 +105,68 @@ namespace RecursiveHasher
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.BackgroundColor = ConsoleColor.Black;
 
-                Task.Factory.StartNew(() => SpinTask());
                 Task.Factory.StartNew(() => ExceptionOut());
 
+                // Disable user selection of console text to prevent accidental process pauses
                 QuickEditMode(false);
 
                 if (IsAdministrator())
                 {
-                    if (args.Length == 0)
+                    // Check that windows meets or exceeds minimum required version
+                    if (WindowsVersionGreaterThanOrEqual(minWinVersion))
                     {
-                        while (true)
+                        if (args.Length == 0)
                         {
-                            Console.Clear();
-                            WriteLineEx("Press D to select a directory.", false, ConsoleColor.Cyan, 0, 0, false, true);
-                            WriteLineEx("Press C to open files for comparison.", false, ConsoleColor.Cyan, 0, 1, false, true);
-                            WriteLineEx("Press E to exit.", false, ConsoleColor.White, 0, 3, false, true);
-
-                            ConsoleKeyInfo op = Console.ReadKey(true);
-                            switch (op.KeyChar.ToString().ToUpper())
+                            while (true)
                             {
-                                case "D":
-                                    DirectoryAnalysis(string.Empty);
-                                    break;
-                                case "C":
-                                    ResultComparison();
-                                    break;
-                                case "E":
-                                    Environment.Exit(0);
-                                    break;
-                                default:
-                                    Console.Clear();
-                                    WriteLineEx("Unexpected input. Try again.", false, ConsoleColor.Red, 0, 0, false, true);
-                                    Thread.Sleep(1500);
-                                    break;
+                                Console.Clear();
+                                WriteLineEx("Press D to select a directory.", false, ConsoleColor.Cyan, 0, 0, false, true);
+                                WriteLineEx("Press C to open files for comparison.", false, ConsoleColor.Cyan, 0, 1, false, true);
+                                WriteLineEx("Press E to exit.", false, ConsoleColor.White, 0, 3, false, true);
+
+                                ConsoleKeyInfo op = Console.ReadKey(true);
+                                switch (op.KeyChar.ToString().ToUpper())
+                                {
+                                    case "D":
+                                        DirectoryAnalysis(string.Empty);
+                                        break;
+                                    case "C":
+                                        ResultComparison();
+                                        break;
+                                    case "E":
+                                        Environment.Exit(0);
+                                        break;
+                                    default:
+                                        Console.Clear();
+                                        WriteLineEx("Unexpected input. Try again.", false, ConsoleColor.Red, 0, 0, false, true);
+                                        Thread.Sleep(1500);
+                                        break;
+                                }
                             }
+                        }
+                        else
+                        {
+                            if (Directory.Exists(args[0]))
+                            {
+                                DirectoryAnalysis(args[0]);
+                            }
+                            else { Environment.Exit(0); }
                         }
                     }
                     else
                     {
-                        if (Directory.Exists(args[0]))
-                        {
-                            DirectoryAnalysis(args[0]);
-                        }
-                        else { Environment.Exit(0); }
+                        Console.Title = "Fatal Error - Wrong OS version";
+                        WriteLineEx("Application not running under Windows ver " + minWinVersion.ToString() + " or greater.", true, ConsoleColor.Red, 0, 0, false, true);
                     }
                 }
                 else
                 {
-                    Console.Title = "Error!";
-                    WriteLineEx("Application not running with administrator privileges! :(", true, ConsoleColor.Red, 0, 0, false, true);
-                    WriteLineEx("Press any key to exit...", true, ConsoleColor.White, 0, 2, false, true);
-                    Console.ReadKey();
-                    Environment.Exit(0);
+                    Console.Title = "Fatal Error - Insufficient permissions";
+                    WriteLineEx("Application not running with administrator privileges.", true, ConsoleColor.Red, 0, 0, false, true);
                 }
+                WriteLineEx("Press any key to exit...", true, ConsoleColor.White, 0, 2, false, true);
+                Console.ReadKey();
+                Environment.Exit(0);
             }
             catch (Exception ex)
             {
@@ -163,9 +175,14 @@ namespace RecursiveHasher
             }
         }
 
-        public static bool IsAdministrator()
+        static bool IsAdministrator()
         {
             return (new WindowsPrincipal(WindowsIdentity.GetCurrent())).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        static bool WindowsVersionGreaterThanOrEqual(Version ver)
+        {
+            return Environment.OSVersion.Version >= ver;
         }
 
         /// <summary>
@@ -191,11 +208,11 @@ namespace RecursiveHasher
 
         static void DirectoryAnalysis(string argDir)
         {
-            List<string> files = new List<string>();
-            while (!files.Any())
+            List<string> files = [];
+            while (files.Count == 0)
             {
                 files = FileList(argDir);
-                if (!files.Any())
+                if (files.Count == 0)
                 {
                     Console.Clear();
                     WriteLineEx("Directory contains no files. Please choose another directory.", false, ConsoleColor.Red, 0, 0, true, true);
@@ -225,7 +242,7 @@ namespace RecursiveHasher
             Console.Clear();
             WriteLineEx("Select a directory to read.", false, ConsoleColor.White, 0, 0, false, true);
 
-            List<string> files = new List<string>();
+            List<string> files = [];
 
             RootDirectory = string.Empty;
 
@@ -234,7 +251,7 @@ namespace RecursiveHasher
             {
                 while (RootDirectory == string.Empty)
                 {
-                    FolderBrowserDialog hf = new FolderBrowserDialog()
+                    FolderBrowserDialog hf = new()
                     {
                         RootFolder = Environment.SpecialFolder.Desktop,
                         Description = "Select a folder to read.",
@@ -256,7 +273,7 @@ namespace RecursiveHasher
             else { RootDirectory = argDir; }
 
             WriteLineEx("Selected path: \"" + RootDirectory + "\"", false, ConsoleColor.Cyan, 0, 2, false, true);
-            WriteLineEx("Reading directory info", false, ConsoleColor.Cyan, 0, 3, false, false);
+            WriteLineEx("Reading directory info...", false, ConsoleColor.Cyan, 0, 3, false, false);
 
             AddFiles(RootDirectory, files);
             return files;
@@ -265,7 +282,6 @@ namespace RecursiveHasher
         {
             try
             {
-                GoSpin = true;
                 Directory.GetFiles(path)
                     .ToList()
                     .ForEach(s => files.Add(s));
@@ -277,10 +293,6 @@ namespace RecursiveHasher
             catch (Exception ex) 
             { 
                 eBucket.Enqueue(new ExceptionData { Message = "Enum failed: ", Exception = ex, FilePath = GetFilePathFromException(ex.Message) });
-            }
-            finally
-            {
-                GoSpin = false;
             }
         }
 
@@ -295,29 +307,18 @@ namespace RecursiveHasher
             return exceptionMessage; 
         }
 
-        static void SpinTask()
-        {
-            while (true)
-            {
-                while (GoSpin)
-                {
-                    WriteLineEx(".", false, null, -1, -1, false, false);
-                    Thread.Sleep(100);
-                }
-                Thread.Sleep(100);
-            }
-        }
-
         /// <summary>
         /// Monitors the exception bucket for new errors, and prints them to console window as needed.
         /// </summary>
         public static void ExceptionOut()
         {
             // starting row for exceptions to be printed on
-            int consolePos = 12;
+            int consolePos = StartingExceptionRow;
+            string LastException = string.Empty;
 
             while (true)
             {
+
                 // check for pending exceptions to post to UI
                 while (eBucket.TryDequeue(out ExceptionData r))
                 {
@@ -325,23 +326,31 @@ namespace RecursiveHasher
                     consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
                     if (consolePos == 0) { consolePos = 12; }
 
-                    StringBuilder exStrb = new StringBuilder();
+                    StringBuilder exStrb = new();
                     exStrb.Append(r.Message);
                     exStrb.Append(r.Exception.GetType().ToString());
-                    exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 5));
+                    exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20) + LeftPoint);
                     WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
-                }
 
-                if (ClearVisibleExceptions.IsSet)
-                {
-                    for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                    // If we've printed at least one exception, remove the pointing string from the prior row...
+                    if (consolePos > StartingExceptionRow)
                     {
-                        WriteLineEx(string.Empty, false, null, 0, i, true, true);
+                        WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, consolePos - 1, true, true);
                     }
-                    ClearVisibleExceptions.Reset();
-                }
+                    LastException = exStrb.ToString();
 
-                Thread.Sleep(50);
+                    // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
+                    if (ClearVisibleExceptions.IsSet)
+                    {
+                        for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                        {
+                            WriteLineEx(string.Empty, false, null, 0, i, true, false);
+                        }
+                        consolePos = StartingExceptionRow;
+                        ClearVisibleExceptions.Reset();
+                    }
+                    Thread.Sleep(50);
+                }
             }
         }
 
@@ -360,7 +369,7 @@ namespace RecursiveHasher
                 FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
                 EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
 
-                WriteLineEx("\rCalculating file hashes, please wait.", false, ConsoleColor.Cyan, 0, 0, true, true);
+                WriteLineEx("\rCalculating file hashes, please wait...", false, ConsoleColor.Cyan, 0, 0, true, true);
 
                 string _curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
                 WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
@@ -439,7 +448,7 @@ namespace RecursiveHasher
             try
             {
                 ProcessFinished = false;
-                TotalFileCount = files.Count();
+                TotalFileCount = files.Count;
 
                 Task.Factory.StartNew(() => UpdateProcessProgress());
 
@@ -456,64 +465,58 @@ namespace RecursiveHasher
                     MaxDegreeOfParallelism = Environment.ProcessorCount
                 };
 
-                ConcurrentBag<FileData> resultdata = new ConcurrentBag<FileData>();
+                ConcurrentBag<FileData> resultdata = [];
 
                 // Compute MD5 hashes for each file in selected directory
                 // Using foreach vs parallel foreach because we want more sequential reads of HDD.
                 Parallel.ForEach(files, parallelOptions, s =>
                 {
                     currentfilename = s;
-                    FileData fd = new FileData()
+                    FileData fd = new()
                     {
                         FilePath = s,
                         DateOfAnalysis = DateTime.Now.ToString()
                     };
 
-                    using (MD5 MD5hsh = MD5.Create())
+                    using MD5 MD5hsh = MD5.Create();
+                    try
                     {
-                        try
+                        using var stream = File.OpenRead(s);
+                        string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
+                        fd.FileHash = MD5;
+                        resultdata.Add(fd);
+                    }
+                    catch (Exception ex)
+                    {
+                        eBucket.Enqueue(new ExceptionData { Message = "Hash error: ", Exception = ex, FilePath = fd.FilePath });
+                        if (ex is UnauthorizedAccessException)
                         {
-                            using (var stream = File.OpenRead(s))
-                            {
-                                string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
-                                fd.FileHash = MD5;
-                                resultdata.Add(fd);
-                            }
+                            fd.FileHash = "Read access denied.";
                         }
-                        catch (Exception ex)
+                        else if (ex is IOException)
                         {
-                            eBucket.Enqueue(new ExceptionData { Message = "Hash error: ", Exception = ex, FilePath = fd.FilePath });
-                            if (ex is UnauthorizedAccessException)
-                            {
-                                fd.FileHash = "Read access denied.";                     
-                            }
-                            else if (ex is IOException)
-                            {
-                                fd.FileHash = "File in use.";
-                            }
-                            else if (ex is DirectoryNotFoundException)
-                            {
-                                fd.FileHash = "Directory not found.";
-                            }
-                            resultdata.Add(fd);
+                            fd.FileHash = "File in use.";
                         }
-                        finally
+                        else if (ex is DirectoryNotFoundException)
                         {
-                            Interlocked.Increment(ref CompletedFileCount);
+                            fd.FileHash = "Directory not found.";
                         }
+                        resultdata.Add(fd);
+                    }
+                    finally
+                    {
+                        Interlocked.Increment(ref CompletedFileCount);
                     }
                 });
 
                 // Write computed hashes to .csv on desktop
-                WriteLineEx("Writing results to disk", false, ConsoleColor.Cyan, 0, 8, true, false);
-                GoSpin = true;
+                WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 7, true, false);
+                WriteLineEx("Writing results to disk...", false, ConsoleColor.Cyan, 0, 8, true, false);
 
                 using (var sw = new StreamWriter(LogPath))
                 {
-                    using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
-                    {
-                        csv.WriteRecords(resultdata);
-                    }
+                    using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
+                    csv.WriteRecords(resultdata);
                 }
                 return LogPath;
             }
@@ -525,22 +528,18 @@ namespace RecursiveHasher
             finally
             {      
                 Task.Delay(500);
-                GoSpin = false;
                 ProcessFinished = true;
             }
         }
 
+        public static CancellationTokenSource queryCancellationSource = new();
+
         static void ResultComparison()
         {
             int FilesAdded = 0;
-
-            List<string> ComparisonFiles = new List<string>();
-
-            List<FileData> FileDataA = new List<FileData>();
-            List<FileData> FileDataB = new List<FileData>();
-
-            // Get two files for comparison
-            Console.Clear();
+            List<string> ComparisonFiles = [];
+            List<FileData> FileDataA = [];
+            List<FileData> FileDataB = [];
 
             try
             {
@@ -555,7 +554,7 @@ namespace RecursiveHasher
                         WriteLineEx("Select second file for comparison.", false, ConsoleColor.White, 0, 0, true, true);
                     }
 
-                    OpenFileDialog FileSelect = new OpenFileDialog();
+                    OpenFileDialog FileSelect = new();
                     FileSelect.ShowDialog();
 
                     if (FileSelect.FileName != string.Empty)
@@ -570,66 +569,55 @@ namespace RecursiveHasher
                     }
                 }
 
-                WriteLineEx("Working", false, ConsoleColor.Cyan, 0, 0, true, false);
-                GoSpin = true;
+                WriteLineEx("Working...", false, ConsoleColor.Cyan, 0, 0, true, false);
 
                 // Read all selected files into memory
                 for (int i = 0; i < ComparisonFiles.Count; i++)
                 {
-                    using (var reader = new StreamReader(ComparisonFiles[i]))
-                    using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
-                    {
-                        if (i == 0) { FileDataA = csv.GetRecords<FileData>().ToList(); }
-                        else if (i == 1) { FileDataB = csv.GetRecords<FileData>().ToList(); }
-                    }
+                    using var reader = new StreamReader(ComparisonFiles[i]);
+                    using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+                    if (i == 0) { FileDataA = csv.GetRecords<FileData>().ToList(); }
+                    else if (i == 1) { FileDataB = csv.GetRecords<FileData>().ToList(); }
                 }
 
                 // Generate a list of file hash differences between all files read.
                 List<FileData> FileDifferences = null;
-                Thread queryThread = new Thread(() =>
+                Task queryThread = Task.Run(() =>
                 {
-                    FileDifferences = FileDataB
-                        .AsParallel()
-                        .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))
-                        .ToList();
-                });
+                    FileDifferences = [..FileDataB.AsParallel().Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))];
+                }, queryCancellationSource.Token);
 
-                queryThread.Start();
-
-                if (!queryThread.Join(TimeSpan.FromSeconds(4800)))
+                if (!queryThread.Wait(TimeSpan.FromSeconds(4800)))
                 {
-                    queryThread.Abort(); // Terminate the thread
+                    queryCancellationSource.Cancel();
                     WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 2, true, true);
                 }
                 else
                 {
-                    WriteLineEx("Query completed successfully.", false, ConsoleColor.Green, 0, 2, true, true);
+                    WriteLineEx("Data comparison completed successfully.", false, ConsoleColor.Green, 0, 2, true, true);
                 }
 
                 if (FileDifferences.Count == 0)
                 {
-                    GoSpin = false;
                     Thread.Sleep(250);
                     WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 3, true, true);
                     Console.ReadKey();
                 }
 
-                GoSpin = false;
                 Thread.Sleep(250);
 
                 Console.Clear();
                 if (FileDifferences.Count > 0)
                 {
-                    WriteLineEx(FileDifferences.Count().ToString() + " file differences found.", false, ConsoleColor.Green, 0, 3, true, true);
+                    WriteLineEx(FileDifferences.Count.ToString() + " file differences found.", false, ConsoleColor.Green, 0, 3, true, true);
                     WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 5, true, true);
                     WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 6, true, true);
 
                     ConsoleKeyInfo op = Console.ReadKey(true);
-                    if (op.KeyChar.ToString().ToUpper() == "C")
+                    if (op.KeyChar.ToString().Equals("C", StringComparison.CurrentCultureIgnoreCase))
                     {
                         Console.Clear();
-                        WriteLineEx("Copying data, please wait", false, ConsoleColor.Cyan, 0, 0, false, false);
-                        GoSpin = true;
+                        WriteLineEx("Copying data, please wait...", false, ConsoleColor.Cyan, 0, 0, false, false);
 
                         string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
                         if (!Directory.Exists(dfolder))
@@ -665,13 +653,10 @@ namespace RecursiveHasher
 
                         using (var sw = new StreamWriter(DiffResultPath))
                         {
-                            using (CsvWriter csv = new CsvWriter(sw, CultureInfo.CurrentCulture))
-                            {
-                                csv.WriteRecords(FileDifferences);
-                            }
+                            using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
+                            csv.WriteRecords(FileDifferences);
                         }
 
-                        GoSpin = false;
                         Thread.Sleep(250);
                         Console.Clear();
                         WriteLineEx("Copy operation finished successfully.", false, ConsoleColor.Green, 0, 0, false, true);
@@ -691,7 +676,6 @@ namespace RecursiveHasher
                 Console.WriteLine(ex.Message);
                 Console.ReadKey();
             }
-            finally { GoSpin = false; }
         }
 
         static string ScrubStringForFilename(string inputString)
@@ -742,7 +726,7 @@ namespace RecursiveHasher
         public static string Truncate(this string value, int maxLength, string truncationSuffix = "…")
         {
             return value?.Length > maxLength
-                ? value.Substring(0, maxLength) + truncationSuffix
+                ? string.Concat(value.AsSpan(0, maxLength), truncationSuffix)
                 : value;
         }
     }
