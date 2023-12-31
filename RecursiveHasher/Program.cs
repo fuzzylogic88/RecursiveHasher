@@ -23,7 +23,6 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using static RecursiveHasher.NativeMethods;
-using static System.Net.WebRequestMethods;
 using File = System.IO.File;
 
 namespace RecursiveHasher
@@ -134,7 +133,7 @@ namespace RecursiveHasher
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.Title = "Error!";
-                    Console.WriteLine("Application not running with administrator privileges!");
+                    Console.WriteLine("Application not running with administrator privileges! :(");
                     Console.WriteLine("");
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine("Press any key to exit...");
@@ -148,10 +147,10 @@ namespace RecursiveHasher
                 Console.ReadKey(true);
             }
         }
+
         public static bool IsAdministrator()
         {
-            return (new WindowsPrincipal(WindowsIdentity.GetCurrent()))
-                      .IsInRole(WindowsBuiltInRole.Administrator);
+            return (new WindowsPrincipal(WindowsIdentity.GetCurrent())).IsInRole(WindowsBuiltInRole.Administrator);
         }
 
         /// <summary>
@@ -320,21 +319,22 @@ namespace RecursiveHasher
                 // Draw progressbar to console window...
                 Console.ForegroundColor = ConsoleColor.White;
 
-                Console.SetCursorPosition(0, 3);
                 string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
-                Console.WriteLine(toprow);
-
                 string ppercent = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';                                            // current prog value
                 string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;  // first portion including percent
                 string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;           // second portion including final box char
+
+                Console.SetCursorPosition(0, 3);
+                WriteLineCentered(toprow);
+
                 Console.SetCursorPosition(0, 4);
-                Console.WriteLine(firsthalf + secondhalf);
+                WriteLineCentered(firsthalf + secondhalf);
 
                 Console.SetCursorPosition(0, 5);
-                Console.WriteLine(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
+                WriteLineCentered(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert);
 
                 Console.SetCursorPosition(0, 6);
-                Console.WriteLine(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
+                WriteLineCentered(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC);
 
                 Console.ForegroundColor = ConsoleColor.Cyan;
 
@@ -347,7 +347,10 @@ namespace RecursiveHasher
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.SetCursorPosition(0, consolePos);
                     Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
-                    Console.WriteLine("Hash error: " + r.Exception.GetType().ToString() + " - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth / 3));
+
+                    string _exPre = "Hash error: ";
+                    string _exStr = r.Exception.GetType().ToString();
+                    Console.WriteLine(_exPre + _exStr + " - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - _exPre.Length - _exStr.Length - 5));
                     Console.ForegroundColor = ConsoleColor.Cyan;
                 }
 
@@ -355,6 +358,14 @@ namespace RecursiveHasher
             }
             Console.SetCursorPosition(0, 2);
             Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+        }
+
+        static void WriteLineCentered(string message)
+        {
+            int screenWidth = Console.WindowWidth;
+            int stringWidth = message.Length;
+            int spaces = (screenWidth / 2) + (stringWidth / 2);
+            Console.WriteLine(message.PadLeft(spaces));
         }
 
         static string HashFinder(List<string> files)
@@ -459,7 +470,6 @@ namespace RecursiveHasher
             public Exception Exception { get; set; }
             public string FilePath { get; set; }
         }
-
 
         static void ResultComparison()
         {
