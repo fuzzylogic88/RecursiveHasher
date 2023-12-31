@@ -35,6 +35,8 @@ namespace RecursiveHasher
         // Semaphore metering access to console position/color/writes 
         static readonly SemaphoreSlim conSph = new SemaphoreSlim(1, 1);
 
+        public static ConsoleColor LastConsoleForeground = ConsoleColor.White;
+
         // box
         public static char BoxFill = '\u2588';
         public static char BoxEmpty = '\u2593';
@@ -109,9 +111,9 @@ namespace RecursiveHasher
                         while (true)
                         {
                             Console.Clear();
-                            WriteLineEx("Press D to select a directory.", false, ConsoleColor.Cyan, 0, 0, false);
-                            WriteLineEx("Press C to open files for comparison.", false, ConsoleColor.Cyan, 0, 1, false);
-                            WriteLineEx("Press E to exit.", false, ConsoleColor.White, 0, 3, false);
+                            WriteLineEx("Press D to select a directory.", false, ConsoleColor.Cyan, 0, 0, false, true);
+                            WriteLineEx("Press C to open files for comparison.", false, ConsoleColor.Cyan, 0, 1, false, true);
+                            WriteLineEx("Press E to exit.", false, ConsoleColor.White, 0, 3, false, true);
 
                             ConsoleKeyInfo op = Console.ReadKey(true);
                             switch (op.KeyChar.ToString().ToUpper())
@@ -127,7 +129,7 @@ namespace RecursiveHasher
                                     break;
                                 default:
                                     Console.Clear();
-                                    WriteLineEx("Unexpected input. Try again.", false, ConsoleColor.Red, 0, 0, false);
+                                    WriteLineEx("Unexpected input. Try again.", false, ConsoleColor.Red, 0, 0, false, true);
                                     Thread.Sleep(1500);
                                     break;
                             }
@@ -145,8 +147,8 @@ namespace RecursiveHasher
                 else
                 {
                     Console.Title = "Error!";
-                    WriteLineEx("Application not running with administrator privileges! :(", true, ConsoleColor.Red, 0, 0, false);
-                    WriteLineEx("Press any key to exit...", true, ConsoleColor.White, 0, 2, false);
+                    WriteLineEx("Application not running with administrator privileges! :(", true, ConsoleColor.Red, 0, 0, false, true);
+                    WriteLineEx("Press any key to exit...", true, ConsoleColor.White, 0, 2, false, true);
                     Console.ReadKey();
                     Environment.Exit(0);
                 }
@@ -193,8 +195,8 @@ namespace RecursiveHasher
                 if (!files.Any())
                 {
                     Console.Clear();
-                    WriteLineEx("Directory contains no files. Please choose another directory.", false, ConsoleColor.Red, 0, 0, true);
-                    WriteLineEx("Press any key to continue...", false, ConsoleColor.White, 0, 2, false);
+                    WriteLineEx("Directory contains no files. Please choose another directory.", false, ConsoleColor.Red, 0, 0, true, true);
+                    WriteLineEx("Press any key to continue...", false, ConsoleColor.White, 0, 2, false, true);
                     Console.ReadKey();
                 }
             }
@@ -203,12 +205,12 @@ namespace RecursiveHasher
 
             if (HashFinder(files) != string.Empty)
             {
-                WriteLineEx("Finished in " + stopwatch.Elapsed.ToString() + ".", false, ConsoleColor.Green, 0, 9, true);
+                WriteLineEx("Finished in " + stopwatch.Elapsed.ToString() + ".", false, ConsoleColor.Green, 0, 9, true, true);
                 Console.ReadKey(true);
             }
             else
             {
-                WriteLineEx("Process failed",false,ConsoleColor.Red,0,9, true);
+                WriteLineEx("Process failed",false,ConsoleColor.Red,0,9, true, true);
                 Console.ReadKey(true);
             }
         }
@@ -216,7 +218,7 @@ namespace RecursiveHasher
         static List<string> FileList(string argDir)
         {
             Console.Clear();
-            WriteLineEx("Select a directory to read.", false, ConsoleColor.White, 0, 0, false);
+            WriteLineEx("Select a directory to read.", false, ConsoleColor.White, 0, 0, false, true);
 
             List<string> files = new List<string>();
 
@@ -241,15 +243,15 @@ namespace RecursiveHasher
                     }
                     else
                     {
-                        WriteLineEx("No directory selected. Please select a different folder.", false, ConsoleColor.Red, 0, 0, true);
+                        WriteLineEx("No directory selected. Please select a different folder.", false, ConsoleColor.Red, 0, 0, true, true);
                         Console.ReadKey(true);
                     }
                 }
             }
             else { RootDirectory = argDir; }
 
-            WriteLineEx("Selected path: \"" + RootDirectory + "\"", false, ConsoleColor.Cyan, 0, 2, false);
-            WriteLineEx("Reading directory info", false, ConsoleColor.Cyan, 0, 3, false);
+            WriteLineEx("Selected path: \"" + RootDirectory + "\"", false, ConsoleColor.Cyan, 0, 2, false, true);
+            WriteLineEx("Reading directory info", false, ConsoleColor.Cyan, 0, 3, false, false);
 
             AddFiles(RootDirectory, files);
             return files;
@@ -281,7 +283,7 @@ namespace RecursiveHasher
             {
                 while (GoSpin)
                 {
-                    Console.Write(".");
+                    WriteLineEx(".", false, null, -1, -1, false, false);
                     Thread.Sleep(100);
                 }
                 Thread.Sleep(100);
@@ -309,8 +311,9 @@ namespace RecursiveHasher
                     exStrb.Append(r.Message);
                     exStrb.Append(r.Exception.GetType().ToString());
                     exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 5));
-                    WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true);
+                    WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
                 }
+                Thread.Sleep(50);
             }
         }
 
@@ -329,11 +332,11 @@ namespace RecursiveHasher
                 FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
                 EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
 
-                WriteLineEx("\rCalculating file hashes, please wait.", false, ConsoleColor.Cyan, 0, 0, true);
+                WriteLineEx("\rCalculating file hashes, please wait.", false, ConsoleColor.Cyan, 0, 0, true, true);
 
                 string _curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
-                WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true);
-                WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true);
+                WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
+                WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true);
 
                 // Draw progressbar to console window...
                 string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;         
@@ -341,11 +344,11 @@ namespace RecursiveHasher
                 string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;           
                 string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;                    
 
-                WriteLineEx(toprow, true, ConsoleColor.White, 0, 3, false);
-                WriteLineEx(firsthalf + secondhalf, true, ConsoleColor.White,0 ,4, false);
-                WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, false);
-                WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, false);
-                Thread.Sleep(10);
+                WriteLineEx(toprow, true, ConsoleColor.White, 0, 3, false, true);
+                WriteLineEx(firsthalf + secondhalf, true, ConsoleColor.White,0 ,4, false, true);
+                WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, false, true);
+                WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, false, true);
+                Thread.Sleep(50);
             }
         }
 
@@ -358,35 +361,48 @@ namespace RecursiveHasher
         /// <param name="left">Console cell / padding</param>
         /// <param name="top">Console row</param>
         /// <param name="clrRow">TRUE to clear row before output</param>
-        static void WriteLineEx(string message, bool isCentered, ConsoleColor cForeground, int left, int top, bool clrRow)
+        /// <param name="termRow">TRUE to add termination char to output</param>
+        static void WriteLineEx(string message, bool isCentered, ConsoleColor? cForeground, int left, int top, bool clrRow, bool termRow)
         {
             try
             {
                 conSph.Wait();
-                Console.ForegroundColor = cForeground;
+
+                if (cForeground.HasValue)
+                {
+                    Console.ForegroundColor = (ConsoleColor)cForeground;
+                    LastConsoleForeground = (ConsoleColor)cForeground;
+                }
+
+                else { cForeground = LastConsoleForeground; }
+
                 int padCnt = 0;
 
-                if (isCentered)
+                // if a console position has been defined...
+                if (left != -1 && top != -1)
                 {
-                    int screenWidth = Console.WindowWidth;
-                    int stringWidth = message.Length;
-                    padCnt = (screenWidth / 2) + (stringWidth / 2);               
-                }
+                    // if centered text is selected, calculate left-pad
+                    if (isCentered)
+                    {
+                        int screenWidth = Console.WindowWidth;
+                        int stringWidth = message.Length;
+                        padCnt = (screenWidth / 2) + (stringWidth / 2);
+                    }
 
-                Console.SetCursorPosition(left, top);
+                    // otherwise, set position normally
+                    Console.SetCursorPosition(left, top);
+                }
 
                 // Clear row of existing data
-                if (clrRow) 
-                {
-                    Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r"); 
-                }
+                if (clrRow) { Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r"); }
 
-                Console.WriteLine(message.PadLeft(padCnt));
+                if (termRow) { Console.WriteLine(message.PadLeft(padCnt)); }
+                else { Console.Write(message.PadLeft(padCnt)); }
             }
+
             finally
             {
                 conSph.Release();
-                Console.ResetColor();
             }
         }
 
@@ -459,7 +475,7 @@ namespace RecursiveHasher
                 });
 
                 // Write computed hashes to .csv on desktop
-                WriteLineEx("Writing results to disk", false, ConsoleColor.Cyan, 0, 8, true);
+                WriteLineEx("Writing results to disk", false, ConsoleColor.Cyan, 0, 8, true, false);
                 GoSpin = true;
 
                 using (var sw = new StreamWriter(LogPath))
@@ -502,11 +518,11 @@ namespace RecursiveHasher
                 {
                     if (FilesAdded == 0) 
                     {
-                        WriteLineEx("Select first file for comparison.", false, ConsoleColor.White, 0, 0, true);
+                        WriteLineEx("Select first file for comparison.", false, ConsoleColor.White, 0, 0, true, true);
                     }
                     if (FilesAdded == 1) 
                     {
-                        WriteLineEx("Select second file for comparison.", false, ConsoleColor.White, 0, 0, true);
+                        WriteLineEx("Select second file for comparison.", false, ConsoleColor.White, 0, 0, true, true);
                     }
 
                     OpenFileDialog FileSelect = new OpenFileDialog();
@@ -520,11 +536,11 @@ namespace RecursiveHasher
                     else
                     {
                         Console.Clear();
-                        WriteLineEx("No file was selected.", false, ConsoleColor.Red, 0, 0, true);
+                        WriteLineEx("No file was selected.", false, ConsoleColor.Red, 0, 0, true, true);
                     }
                 }
 
-                WriteLineEx("Working", false, ConsoleColor.Cyan, 0, 0, true);
+                WriteLineEx("Working", false, ConsoleColor.Cyan, 0, 0, true, false);
                 GoSpin = true;
 
                 // Read all selected files into memory
@@ -553,18 +569,18 @@ namespace RecursiveHasher
                 if (!queryThread.Join(TimeSpan.FromSeconds(4800)))
                 {
                     queryThread.Abort(); // Terminate the thread
-                    WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 2, true);
+                    WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 2, true, true);
                 }
                 else
                 {
-                    WriteLineEx("Query completed successfully.", false, ConsoleColor.Green, 0, 2, true);
+                    WriteLineEx("Query completed successfully.", false, ConsoleColor.Green, 0, 2, true, true);
                 }
 
                 if (FileDifferences.Count == 0)
                 {
                     GoSpin = false;
                     Thread.Sleep(250);
-                    WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 3, true);
+                    WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 3, true, true);
                     Console.ReadKey();
                 }
 
@@ -574,15 +590,15 @@ namespace RecursiveHasher
                 Console.Clear();
                 if (FileDifferences.Count > 0)
                 {
-                    WriteLineEx(FileDifferences.Count().ToString() + " file differences found.", false, ConsoleColor.Green, 0, 3, true);
-                    WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 5, true);
-                    WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 6, true);
+                    WriteLineEx(FileDifferences.Count().ToString() + " file differences found.", false, ConsoleColor.Green, 0, 3, true, true);
+                    WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 5, true, true);
+                    WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 6, true, true);
 
                     ConsoleKeyInfo op = Console.ReadKey(true);
                     if (op.KeyChar.ToString().ToUpper() == "C")
                     {
                         Console.Clear();
-                        WriteLineEx("Copying data, please wait", false, ConsoleColor.Cyan, 0, 0, false);
+                        WriteLineEx("Copying data, please wait", false, ConsoleColor.Cyan, 0, 0, false, false);
                         GoSpin = true;
 
                         string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
