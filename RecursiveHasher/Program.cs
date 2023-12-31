@@ -18,6 +18,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -52,6 +53,8 @@ namespace RecursiveHasher
 
         // Container for exception data as files fail to be read
         public static ConcurrentQueue<ExceptionData> eBucket = new ConcurrentQueue<ExceptionData>();
+        public static ManualResetEventSlim ClearVisibleExceptions = new ManualResetEventSlim(false);
+
 
         public static string currentfilename = string.Empty;
         public static decimal progresspercent = 0m;
@@ -200,12 +203,14 @@ namespace RecursiveHasher
                     Console.ReadKey();
                 }
             }
+            ClearVisibleExceptions.Set();
 
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             if (HashFinder(files) != string.Empty)
             {
                 WriteLineEx("Finished in " + stopwatch.Elapsed.ToString() + ".", false, ConsoleColor.Green, 0, 9, true, true);
+                ClearVisibleExceptions.Set();
                 Console.ReadKey(true);
             }
             else
@@ -269,12 +274,25 @@ namespace RecursiveHasher
                     .ToList()
                     .ForEach(s => AddFiles(s, files));
             }
-            catch (UnauthorizedAccessException) { /* ok, so we are not allowed to dig into that directory. Move on. */ }
-            catch (DirectoryNotFoundException) { /* odd, but we'll look past it. */ }
+            catch (Exception ex) 
+            { 
+                eBucket.Enqueue(new ExceptionData { Message = "Enum failed: ", Exception = ex, FilePath = GetFilePathFromException(ex.Message) });
+            }
             finally
             {
                 GoSpin = false;
             }
+        }
+
+        static string GetFilePathFromException(string exceptionMessage)
+        {
+            // Matches file path between single quotes
+            string pattern = @"'([^']+)'"; 
+            Match match = Regex.Match(exceptionMessage, pattern);
+
+            if (match.Success && match.Groups.Count > 1) { return match.Groups[1].Value; }
+
+            return exceptionMessage; 
         }
 
         static void SpinTask()
@@ -313,6 +331,16 @@ namespace RecursiveHasher
                     exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 5));
                     WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
                 }
+
+                if (ClearVisibleExceptions.IsSet)
+                {
+                    for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                    {
+                        WriteLineEx(string.Empty, false, null, 0, i, true, true);
+                    }
+                    ClearVisibleExceptions.Reset();
+                }
+
                 Thread.Sleep(50);
             }
         }
@@ -642,18 +670,16 @@ namespace RecursiveHasher
                         }
 
                         GoSpin = false;
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("Copy operation finished successfully.");
+                        Thread.Sleep(250);
+                        Console.Clear();
+                        WriteLineEx("Copy operation finished successfully.", false, ConsoleColor.Green, 0, 0, false, true);
                     }
                     else
                     {
                         Environment.Exit(0);
                     }
                 }
-
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("");
-                Console.WriteLine("Press any key to exit.");
+                WriteLineEx("Press any key to exit.", false, ConsoleColor.White, 0, 2, false, true);
                 Console.ReadKey();
             }
             catch (Exception ex)
