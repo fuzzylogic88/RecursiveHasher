@@ -447,7 +447,9 @@ namespace RecursiveHasher
 
                 // Create a unique filename for our output file
                 string FolderName = new DirectoryInfo(RootDirectory).Name;
-                string LogPath = FilenameGenerator(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FileHashes_" + FolderName + ".csv", 1024);
+                string LogPath = FilenameGenerator(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop), 
+                    "FileHashes_" + ScrubStringForFilename(FolderName) + ".csv", 1024);
 
                 var parallelOptions = new ParallelOptions
                 {
@@ -690,6 +692,12 @@ namespace RecursiveHasher
                 Console.ReadKey();
             }
             finally { GoSpin = false; }
+        }
+
+        static string ScrubStringForFilename(string inputString)
+        {
+            // Remove invalid characters
+            return Regex.Replace(inputString, @"[\\/:*?""<>|]", "");
         }
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
