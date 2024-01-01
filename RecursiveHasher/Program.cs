@@ -314,8 +314,10 @@ namespace RecursiveHasher
         {
             // starting row for exceptions to be printed on
             int consolePos = StartingExceptionRow;
-            int row = 0;
+            int lastConsolePos = 0;
             string LastException = string.Empty;
+
+            StringBuilder exStrb = new();
 
             while (true)
             {
@@ -323,24 +325,27 @@ namespace RecursiveHasher
                 // check for pending exceptions to post to UI
                 while (eBucket.TryDequeue(out ExceptionData r))
                 {
-                    // increment row by one for each failed file, wrapping back to the initial row
-                    consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
-                    if (consolePos == 0) { consolePos = StartingExceptionRow; }
+                    lastConsolePos = consolePos;
+                    LastException = exStrb.ToString();
 
-                    StringBuilder exStrb = new();
+                    // Add new exception to stringbuilder...
+                    exStrb.Clear();
                     exStrb.Append(r.Message);
                     exStrb.Append(r.Exception.GetType().ToString());
                     exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20) + LeftPoint);
-                    WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
+                    
+                    // increment row by one for each failed file, eventually wrapping back to the initial row
+                    consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
+                    if (consolePos == 0) { consolePos = StartingExceptionRow; }
 
-                    // If we've printed at least one exception, remove the pointing string from the prior row...
-                    if (exStrb.ToString() != string.Empty)
+                    WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
+                    
+                    // remove the pointing string from the prior row if applicable
+                    if (!string.IsNullOrEmpty(LastException))
                     {
-                        if (consolePos == StartingExceptionRow) { row = Console.WindowHeight - 1; }
-                        else { row = consolePos - 1; }
+                        WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, lastConsolePos, true, true);
                     }
-                    LastException = exStrb.ToString();
-                    WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, row, true, true);
+
                 }
 
                 // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
