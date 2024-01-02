@@ -50,8 +50,9 @@ namespace RecursiveHasher
         public static readonly char BoxHoriz = '\u2550';
         public static readonly char BoxVert = '\u2551';
 
-        public static readonly int StartingExceptionRow = 12;
-        public static readonly string LeftPoint = " <<";
+        public static readonly int StartingExceptionRow = 8;
+
+        public static readonly string RightPoint = ">> ";
 
         public static readonly int PBarBlockCapacity = 64;
         public static int FilledBlockCount = 0;
@@ -98,6 +99,7 @@ namespace RecursiveHasher
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.BackgroundColor = ConsoleColor.Black;
 
+                Task.Factory.StartNew(() => ConsoleResizeWatcher());
                 Task.Factory.StartNew(() => ExceptionOut());
 
                 // Disable user selection of console text to prevent accidental process pauses
@@ -213,14 +215,13 @@ namespace RecursiveHasher
                     Console.ReadKey();
                 }
             }
-            ClearVisibleExceptions.Set();
 
+            ClearVisibleExceptions.Set();
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             if (HashFinder(files) != string.Empty)
             {
                 WriteLineEx("Finished in " + stopwatch.Elapsed.ToString() + ".", false, ConsoleColor.Green, 0, 9, true, true);
-                ClearVisibleExceptions.Set();
                 Console.ReadKey(true);
             }
             else
@@ -314,44 +315,74 @@ namespace RecursiveHasher
 
             while (true)
             {
-
-                // check for pending exceptions to post to UI
-                while (eBucket.TryDequeue(out ExceptionData r))
+                try
                 {
-                    lastConsolePos = consolePos;
-                    LastException = exStrb.ToString();
-
-                    // Add new exception to stringbuilder...
-                    exStrb.Clear();
-                    exStrb.Append(r.Message);
-                    exStrb.Append(r.Exception.GetType().ToString());
-                    exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20) + LeftPoint);
-                    
-                    // increment row by one for each failed file, eventually wrapping back to the initial row
-                    consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
-                    if (consolePos == 0) { consolePos = StartingExceptionRow; }
-
-                    WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
-                    
-                    // remove the pointing string from the prior row if applicable
-                    if (!string.IsNullOrEmpty(LastException))
+                    // check for pending exceptions to post to UI
+                    while (eBucket.TryDequeue(out ExceptionData r))
                     {
-                        WriteLineEx(LastException.TrimEnd(LeftPoint.ToCharArray()), false, ConsoleColor.Red, 0, lastConsolePos, true, true);
+                        lastConsolePos = consolePos;
+                        LastException = exStrb.ToString();
+
+                        // Add new exception to stringbuilder...
+                        exStrb.Clear();
+                        exStrb.Append(RightPoint + r.Message);
+                        exStrb.Append(r.Exception.GetType().ToString());
+                        exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20));
+
+                        // increment row by one for each failed file, eventually wrapping back to the initial row
+                        consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
+                        if (consolePos == 0) { consolePos = StartingExceptionRow; }
+
+                        WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
+
+                        // remove the pointing string from the prior row if applicable
+                        if (!string.IsNullOrEmpty(LastException))
+                        {
+                            WriteLineEx(LastException.Replace(RightPoint, new string(' ', RightPoint.Length)), false, ConsoleColor.Red, 0, lastConsolePos, true, true);
+                        }
                     }
 
-                }
-
-                // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
-                if (ClearVisibleExceptions.IsSet)
-                {
-                    consolePos = StartingExceptionRow;
-                    for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                    // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
+                    if (ClearVisibleExceptions.IsSet)
                     {
-                        WriteLineEx(string.Empty, false, null, 0, i, true, false);
+                        consolePos = StartingExceptionRow;
+                        for (int i = consolePos; i < Console.WindowHeight - 1; i++)
+                        {
+                            WriteLineEx(string.Empty, false, null, 0, i, true, false);
+                        }
+                        ClearVisibleExceptions.Reset();
                     }
-                    ClearVisibleExceptions.Reset();
+                    Thread.Sleep(50);
                 }
-                Thread.Sleep(50);
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Exception painter: " + ex.StackTrace);
+                }
+            }
+        }
+
+
+        public static bool RedrawRequired = false;
+        /// <summary>
+        /// Task monitoring console window for size changes, raising redraw flag when necessary
+        /// </summary>
+        public static void ConsoleResizeWatcher()
+        {
+            while (true)
+            {
+                // Compare old/new window sizes with delay
+                CWindowSz oldCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
+                Thread.Sleep(100);
+                CWindowSz newCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
+
+                // Window size changed? 
+                if (oldCWindowSz.Width != newCWindowSz.Width || oldCWindowSz.Height != newCWindowSz.Height)
+                {
+                    // Allow redraw to occur on other drawing operations for an amount of time.
+                    RedrawRequired = true;
+                    Thread.Sleep(500);
+                    RedrawRequired = false;
+                }
             }
         }
 
@@ -364,43 +395,34 @@ namespace RecursiveHasher
             EmptyBlockCount = PBarBlockCapacity;
             FilledBlockCount = 0;
 
-            bool barRequresRedraw = false;
-
             while (!ProcessFinished)
             {
                 try
                 {
-                    CWindowSz oldCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
-
                     // get number of filled & empty boxes to display
                     FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
                     EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
 
                     WriteLineEx("\rCalculating file hashes, please wait...", false, ConsoleColor.Cyan, 0, 0, true, true);
 
-                    string _curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
-                    WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
-                    WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true);
+                    string curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
+                    WriteLineEx(curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
+
+                    if (RedrawRequired) { WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true); }
 
                     // Draw progressbar to console window...
-                    string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
-                    string ppercent = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';
-                    string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;
-                    string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;
+                    string topRow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
+                    string pPercentStr = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';
+                    string firstHalf = BoxVert + new string(' ', topRow.Length / 2 - pPercentStr.Length) + pPercentStr;
+                    string secondHalf = new string(' ', topRow.Length - firstHalf.Length - 1) + BoxVert;
 
-                    CWindowSz newCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
-                    if (oldCWindowSz.Width != newCWindowSz.Width || oldCWindowSz.Height != newCWindowSz.Height)
-                    {
-                        barRequresRedraw = true;
-                    }
-
-                    WriteLineEx(toprow, true, ConsoleColor.White, 0, 3, barRequresRedraw, true);
-                    WriteLineEx(firsthalf + secondhalf, true, ConsoleColor.White, 0, 4, barRequresRedraw, true);
-                    WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, barRequresRedraw, true);
-                    WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, barRequresRedraw, true);
-
-                    barRequresRedraw = false;
-
+                    WriteLineEx(topRow, true, ConsoleColor.White, 0, 3, RedrawRequired, true);
+                    WriteLineEx(firstHalf + secondHalf, true, ConsoleColor.White, 0, 4, RedrawRequired, true);
+                    WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, RedrawRequired, true);
+                    WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, RedrawRequired, true);
+                    
+                    if (RedrawRequired) { WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 7, true, true); }
+                    
                     Thread.Sleep(50);
                 }
                 catch (Exception ex)
@@ -440,15 +462,23 @@ namespace RecursiveHasher
                 if (left != -1 && top != -1)
                 {
                     // if centered text is selected, calculate left-pad
-                    if (isCentered)
+                    try
                     {
-                        int screenWidth = Console.WindowWidth;
-                        int stringWidth = message.Length;
-                        padCnt = (screenWidth / 2) + (stringWidth / 2);
-                    }
+                        if (isCentered)
+                        {
+                            int screenWidth = Console.WindowWidth;
+                            int stringWidth = message.Length;
+                            padCnt = (screenWidth / 2) + (stringWidth / 2);
+                        }
 
-                    // otherwise, set position normally
-                    Console.SetCursorPosition(left, top);
+                        // otherwise, set position normally
+                        Console.SetCursorPosition(left, top);
+                    }
+                    catch
+                    {
+                        // Console window is likely zero-size
+                        return;
+                    }
                 }
 
                 // Clear row of existing data
@@ -469,6 +499,7 @@ namespace RecursiveHasher
             try
             {
                 ProcessFinished = false;
+                CompletedFileCount = 0;
                 TotalFileCount = files.Count;
 
                 Task.Factory.StartNew(() => UpdateProcessProgress());
@@ -481,6 +512,8 @@ namespace RecursiveHasher
                     Environment.GetFolderPath(Environment.SpecialFolder.Desktop), 
                     "FileHashes_" + ScrubStringForFilename(FolderName) + ".csv", 1024);
 
+                // Max concurrent threads are limited to logical processor count to prevent out-of-memory errors as files are read.
+                // Further, parallelizing file operations on HDDs offers minimal performance benefit.
                 var parallelOptions = new ParallelOptions
                 {
                     MaxDegreeOfParallelism = Environment.ProcessorCount
@@ -498,13 +531,12 @@ namespace RecursiveHasher
                         FilePath = s,
                         DateOfAnalysis = DateTime.Now.ToString()
                     };
-
-                    using MD5 MD5hsh = MD5.Create();
+             
                     try
                     {
-                        using var stream = File.OpenRead(s);
-                        string MD5 = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
-                        fd.FileHash = MD5;
+                        using MD5 MD5hsh = MD5.Create();
+                        using FileStream stream = new(s, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                        fd.FileHash = BitConverter.ToString(MD5hsh.ComputeHash(stream)).Replace("-", string.Empty);
                         resultdata.Add(fd);
                     }
                     catch (Exception ex)
@@ -530,10 +562,16 @@ namespace RecursiveHasher
                     }
                 });
 
-                // Write computed hashes to .csv on desktop
+                ClearVisibleExceptions.Set();
+                while (ClearVisibleExceptions.IsSet)
+                {
+                    Thread.Sleep(10);
+                }
+
                 WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 7, true, false);
                 WriteLineEx("Writing results to disk...", false, ConsoleColor.Cyan, 0, 8, true, false);
 
+                // Write computed hashes to .csv on desktop
                 using (var sw = new StreamWriter(LogPath))
                 {
                     using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
@@ -558,6 +596,7 @@ namespace RecursiveHasher
         static void ResultComparison()
         {
             int FilesAdded = 0;
+            bool ErrorOnCopy = false;
             List<string> ComparisonFiles = [];
             List<FileData> FileDataA = [];
             List<FileData> FileDataB = [];
@@ -566,6 +605,7 @@ namespace RecursiveHasher
             {
                 while (FilesAdded < 2)
                 {
+                    Console.Clear();
                     if (FilesAdded == 0) 
                     {
                         WriteLineEx("Select first file for comparison.", false, ConsoleColor.White, 0, 0, true, true);
@@ -585,12 +625,11 @@ namespace RecursiveHasher
                     }
                     else
                     {
-                        Console.Clear();
                         WriteLineEx("No file was selected.", false, ConsoleColor.Red, 0, 0, true, true);
                     }
                 }
 
-                WriteLineEx("Working...", false, ConsoleColor.Cyan, 0, 0, true, false);
+                WriteLineEx("Comparing datasets, please wait...", false, ConsoleColor.Cyan, 0, 0, true, false);
 
                 // Read all selected files into memory
                 for (int i = 0; i < ComparisonFiles.Count; i++)
@@ -611,76 +650,88 @@ namespace RecursiveHasher
                 if (!queryThread.Wait(TimeSpan.FromSeconds(4800)))
                 {
                     queryCancellationSource.Cancel();
-                    WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 2, true, true);
+                    Console.Clear();
+                    WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 0, true, true);
                 }
                 else
                 {
-                    WriteLineEx("Data comparison completed successfully.", false, ConsoleColor.Green, 0, 2, true, true);
+                    Console.Clear();
+                    WriteLineEx("Data comparison completed successfully.", false, ConsoleColor.Green, 0, 0, true, true);
                 }
 
                 if (FileDifferences.Count == 0)
                 {
                     Thread.Sleep(250);
-                    WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 3, true, true);
+                    WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 2, true, true);
                     Console.ReadKey();
                 }
 
                 Thread.Sleep(250);
 
-                Console.Clear();
                 if (FileDifferences.Count > 0)
                 {
-                    WriteLineEx(FileDifferences.Count.ToString() + " file differences found.", false, ConsoleColor.Green, 0, 3, true, true);
-                    WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 5, true, true);
-                    WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 6, true, true);
+                    WriteLineEx(FileDifferences.Count.ToString() + " file differences found.", false, ConsoleColor.Green, 0, 2, true, true);
+                    WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 4, true, true);
+                    WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 5, true, true);
 
                     ConsoleKeyInfo op = Console.ReadKey(true);
                     if (op.KeyChar.ToString().Equals("C", StringComparison.CurrentCultureIgnoreCase))
                     {
-                        Console.Clear();
-                        WriteLineEx("Copying data, please wait...", false, ConsoleColor.Cyan, 0, 0, false, false);
-
-                        string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
-                        if (!Directory.Exists(dfolder))
+                        try
                         {
-                            Directory.CreateDirectory(dfolder);
-                        }
+                            Console.Clear();
+                            WriteLineEx("Copying data, please wait...", false, ConsoleColor.Cyan, 0, 7, false, false);
 
-                        // Copy file differences to folder on desktop
-                        foreach (FileData diff in FileDifferences)
+                            string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
+                            if (!Directory.Exists(dfolder))
+                            {
+                                Directory.CreateDirectory(dfolder);
+                            }
+
+                            // Copy file differences to folder on desktop
+                            foreach (FileData diff in FileDifferences)
+                            {
+                                string fname = string.Empty;
+                                string OriginalFileName = Path.GetFileName(diff.FilePath);
+
+                                // in the event of duplicate photos, check that filename is unique...
+                                if (File.Exists(dfolder + OriginalFileName))
+                                {
+                                    fname = FilenameGenerator(dfolder, OriginalFileName, 1024);
+                                }
+                                else { fname = dfolder + OriginalFileName; }
+
+                                // Copy file to directory, NOT overwriting.
+                                try
+                                {
+                                    File.Copy(diff.FilePath, fname, false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    ErrorOnCopy = true;
+                                    eBucket.Enqueue(new ExceptionData { Message = "Copy error: ", Exception = ex, FilePath = diff.FilePath });
+                                }
+                            }
+
+                            string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
+
+                            using (var sw = new StreamWriter(DiffResultPath))
+                            {
+                                using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
+                                csv.WriteRecords(FileDifferences);
+                            }
+
+                            Thread.Sleep(250);
+
+                            Console.Clear();
+                            if (!ErrorOnCopy) { WriteLineEx("Copy operation finished successfully.", false, ConsoleColor.Green, 0, 0, false, true); }
+                            else { WriteLineEx("Copy operation finished with errors.", false, ConsoleColor.Yellow, 0, 0, false, true); }
+                        }
+                        catch (Exception ex)
                         {
-                            string fname = string.Empty;
-                            string OriginalFileName = Path.GetFileName(diff.FilePath);
-
-                            // in the event of duplicate photos, check that filename is unique...
-                            if (File.Exists(dfolder + OriginalFileName))
-                            {
-                                fname = FilenameGenerator(dfolder, OriginalFileName, 1024);
-                            }
-                            else { fname = dfolder + OriginalFileName; }
-
-                            // Copy file to directory, NOT overwriting.
-                            try
-                            {
-                                File.Copy(diff.FilePath, fname, false);
-                            }
-                            catch (Exception ex)
-                            {
-                                eBucket.Enqueue(new ExceptionData { Message = "Copy error: ", Exception = ex, FilePath = diff.FilePath });
-                            }
+                            Console.Clear();
+                            WriteLineEx("Copy operation failed. (" + ex.GetType() + ")", false, ConsoleColor.Red, 0, 0, false, true);
                         }
-
-                        string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
-
-                        using (var sw = new StreamWriter(DiffResultPath))
-                        {
-                            using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
-                            csv.WriteRecords(FileDifferences);
-                        }
-
-                        Thread.Sleep(250);
-                        Console.Clear();
-                        WriteLineEx("Copy operation finished successfully.", false, ConsoleColor.Green, 0, 0, false, true);
                     }
                     else
                     {
