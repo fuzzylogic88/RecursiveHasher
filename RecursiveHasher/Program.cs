@@ -28,7 +28,7 @@ using File = System.IO.File;
 
 namespace RecursiveHasher
 {
-    internal class Program
+    internal partial class Program
     {
         public static Version minWinVersion = new(6, 1);
 
@@ -77,13 +77,6 @@ namespace RecursiveHasher
                 Console.SetWindowSize(100, 40);
 
                 IntPtr handle = GetConsoleWindow();
-                IntPtr sysMenu = GetSystemMenu(handle, false);
-
-                if (handle != IntPtr.Zero)
-                {
-                   DeleteMenu(sysMenu, SC_MAXIMIZE, MF_BYCOMMAND);
-                   DeleteMenu(sysMenu, SC_SIZE, MF_BYCOMMAND);
-                }
 
                 // Set font
                 CONSOLE_FONT_INFO_EX consoleFont = new()
@@ -314,8 +307,8 @@ namespace RecursiveHasher
         {
             // starting row for exceptions to be printed on
             int consolePos = StartingExceptionRow;
-            int lastConsolePos = 0;
-            string LastException = string.Empty;
+            int lastConsolePos;
+            string LastException;
 
             StringBuilder exStrb = new();
 
@@ -371,29 +364,49 @@ namespace RecursiveHasher
             EmptyBlockCount = PBarBlockCapacity;
             FilledBlockCount = 0;
 
+            bool barRequresRedraw = false;
+
             while (!ProcessFinished)
             {
-                // get number of filled & empty boxes to display
-                FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
-                EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
+                try
+                {
+                    CWindowSz oldCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
 
-                WriteLineEx("\rCalculating file hashes, please wait...", false, ConsoleColor.Cyan, 0, 0, true, true);
+                    // get number of filled & empty boxes to display
+                    FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
+                    EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
 
-                string _curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
-                WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
-                WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true);
+                    WriteLineEx("\rCalculating file hashes, please wait...", false, ConsoleColor.Cyan, 0, 0, true, true);
 
-                // Draw progressbar to console window...
-                string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;         
-                string ppercent = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';  
-                string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;           
-                string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;                    
+                    string _curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
+                    WriteLineEx(_curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
+                    WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true);
 
-                WriteLineEx(toprow, true, ConsoleColor.White, 0, 3, false, true);
-                WriteLineEx(firsthalf + secondhalf, true, ConsoleColor.White,0 ,4, false, true);
-                WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, false, true);
-                WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, false, true);
-                Thread.Sleep(50);
+                    // Draw progressbar to console window...
+                    string toprow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
+                    string ppercent = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';
+                    string firsthalf = BoxVert + new string(' ', toprow.Length / 2 - ppercent.Length) + ppercent;
+                    string secondhalf = new string(' ', toprow.Length - firsthalf.Length - 1) + BoxVert;
+
+                    CWindowSz newCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
+                    if (oldCWindowSz.Width != newCWindowSz.Width || oldCWindowSz.Height != newCWindowSz.Height)
+                    {
+                        barRequresRedraw = true;
+                    }
+
+                    WriteLineEx(toprow, true, ConsoleColor.White, 0, 3, barRequresRedraw, true);
+                    WriteLineEx(firsthalf + secondhalf, true, ConsoleColor.White, 0, 4, barRequresRedraw, true);
+                    WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, barRequresRedraw, true);
+                    WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, barRequresRedraw, true);
+
+                    barRequresRedraw = false;
+
+                    Thread.Sleep(50);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.StackTrace);
+                }
             }
         }
 
@@ -689,7 +702,7 @@ namespace RecursiveHasher
         static string ScrubStringForFilename(string inputString)
         {
             // Remove invalid characters
-            return Regex.Replace(inputString, @"[\\/:*?""<>|]", "");
+            return DisallowedPathCharacters().Replace(inputString, "");
         }
 
         static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
@@ -727,15 +740,22 @@ namespace RecursiveHasher
             }
             throw new Exception("Could not create unique filename in " + maxAttempts + " attempts");
         }
+
+        [GeneratedRegex(@"[\\/:*?""<>|]")]
+        private static partial Regex DisallowedPathCharacters();
     }
 
     internal static class StringExtensions
     {
         public static string Truncate(this string value, int maxLength, string truncationSuffix = "…")
         {
-            return value?.Length > maxLength
-                ? string.Concat(value.AsSpan(0, maxLength), truncationSuffix)
-                : value;
+            try
+            {
+                return value?.Length > maxLength
+                    ? string.Concat(value.AsSpan(0, maxLength), truncationSuffix)
+                    : value;
+            }
+            catch { return value; }
         }
     }
 
@@ -750,6 +770,11 @@ namespace RecursiveHasher
         public string Message {  get; set; }
         public Exception Exception { get; set; }
         public string FilePath { get; set; }
+    }
+    struct CWindowSz
+    {
+        public int Width { get; set; }
+        public int Height { get; set; }
     }
 }
 

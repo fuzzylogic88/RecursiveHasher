@@ -11,7 +11,7 @@ using System.Runtime.InteropServices;
 
 namespace RecursiveHasher
 {
-    public static class NativeMethods
+    public static partial class NativeMethods
     {
         public enum StdHandle : int
         {
@@ -20,8 +20,8 @@ namespace RecursiveHasher
             STD_ERROR_HANDLE = -12,
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr GetStdHandle(int nStdHandle); //returns Handle
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        public static partial IntPtr GetStdHandle(int nStdHandle); //returns Handle
 
         public enum ConsoleMode : uint
         {
@@ -43,27 +43,16 @@ namespace RecursiveHasher
             ENABLE_LVB_GRID_WORLDWIDE = 0x0010
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 
-        public const int MF_BYCOMMAND = 0x00000000;
-        public const int SC_CLOSE = 0xF060;
-        public const int SC_MINIMIZE = 0xF020;
-        public const int SC_MAXIMIZE = 0xF030;
-        public const int SC_SIZE = 0xF000; //resize
-
-        [DllImport("user32.dll")]
-        public static extern int DeleteMenu(IntPtr hMenu, int nPosition, int wFlags);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
-
-        [DllImport("kernel32.dll", ExactSpelling = true)]
-        public static extern IntPtr GetConsoleWindow();
-
+        [LibraryImport("kernel32.dll")]
+        public static partial IntPtr GetConsoleWindow();
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct CONSOLE_FONT_INFO_EX
