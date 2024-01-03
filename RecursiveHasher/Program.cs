@@ -88,7 +88,7 @@ namespace RecursiveHasher
                     dwFontSize = new COORD { X = 12, Y = 24 }, 
                     FontFamily = 0,
                     FontWeight = 400,
-                    FaceName = "Courier New" 
+                    FaceName = "Consolas" 
                 };
 
                 IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_OUTPUT_HANDLE);
