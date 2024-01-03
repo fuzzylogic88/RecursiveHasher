@@ -25,86 +25,20 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using static RecursiveHasher.NativeMethods;
+using static RecursiveHasher.FSHelpers;
+using static RecursiveHasher.ConsoleHelpers;
 using File = System.IO.File;
 
 namespace RecursiveHasher
 {
     internal partial class Program
     {
-        public static Version minWinVersion = new(6, 1);
-
-        public static string RootDirectory = string.Empty;
-
-        // Semaphore metering access to console position/color/writes 
-        static readonly SemaphoreSlim conSph = new(1, 1);
-
-        public static ConsoleColor LastConsoleForeground = ConsoleColor.White;
-
-        // box
-        public static readonly char BoxFill = '\u2588';
-        public static readonly char BoxEmpty = '\u2593';
-
-        public static readonly char BoxBendA = '\u2554';
-        public static readonly char BoxBendB = '\u2557';
-        public static readonly char BoxBendC = '\u255D';
-        public static readonly char BoxBendD = '\u255A';
-        public static readonly char BoxHoriz = '\u2550';
-        public static readonly char BoxVert = '\u2551';
-
-        public static readonly int StartingExceptionRow = 8;
-
-        public static readonly string RightPoint = ">> ";
-
-        public static readonly int PBarBlockCapacity = 64;
-        public static int FilledBlockCount = 0;
-        public static int EmptyBlockCount = 0;
-
-        public static ConcurrentQueue<ExceptionData> eBucket = new();
-        public static ManualResetEventSlim ClearVisibleExceptions = new(false);
-
-        public static string currentfilename = string.Empty;
-        public static decimal progresspercent = 0m;
-        public static int CompletedFileCount = 0;
-        public static int TotalFileCount = 0;
-
-        public static bool ProcessFinished = false;
-
         [STAThread]
         static void Main(string[] args)
         {
             try
             {
-                Console.OutputEncoding = Encoding.Unicode;
-                Console.CursorVisible = false;
-                Console.SetWindowSize(100, 40);
-
-                IntPtr handle = GetConsoleWindow();
-
-                // Set font
-                CONSOLE_FONT_INFO_EX consoleFont = new()
-                {
-                    cbSize = Marshal.SizeOf<CONSOLE_FONT_INFO_EX>(),
-                    nFont = 0,
-                    dwFontSize = new COORD { X = 12, Y = 24 }, 
-                    FontFamily = 0,
-                    FontWeight = 400,
-                    FaceName = "Consolas" 
-                };
-
-                IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_OUTPUT_HANDLE);
-                int result = SetCurrentConsoleFontEx(consoleHandle, false, ref consoleFont);
-                
-                Console.SetBufferSize(Console.WindowWidth, Console.WindowHeight);
-
-                Console.Title = "MD5 Hasher";
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.BackgroundColor = ConsoleColor.Black;
-
-                Task.Factory.StartNew(() => ConsoleResizeWatcher());
-                Task.Factory.StartNew(() => ExceptionOut());
-
-                // Disable user selection of console text to prevent accidental process pauses
-                QuickEditMode(false);
+                ConsoleSetup();
 
                 if (IsAdministrator())
                 {
@@ -181,26 +115,6 @@ namespace RecursiveHasher
             return Environment.OSVersion.Version >= ver;
         }
 
-        /// <summary>
-        /// Enables/disables console features to prevent user accidentally stopping process by selecting window text
-        /// </summary>
-        /// <param name="Enable"></param>
-        public static void QuickEditMode(bool Enable)
-        {
-            IntPtr consoleHandle = GetStdHandle((int)StdHandle.STD_INPUT_HANDLE);
-
-            GetConsoleMode(consoleHandle, out uint consoleMode);
-            if (Enable)
-            {
-                consoleMode |= ((uint)ConsoleMode.ENABLE_QUICK_EDIT_MODE);
-            }
-            else
-            {
-                consoleMode &= ~((uint)ConsoleMode.ENABLE_QUICK_EDIT_MODE);
-            }
-            consoleMode |= ((uint)ConsoleMode.ENABLE_EXTENDED_FLAGS);
-            SetConsoleMode(consoleHandle, consoleMode);
-        }
 
         static void DirectoryAnalysis(string argDir)
         {
@@ -272,227 +186,6 @@ namespace RecursiveHasher
 
             AddFiles(RootDirectory, files);
             return files;
-        }
-        private static void AddFiles(string path, IList<string> files)
-        {
-            try
-            {
-                Directory.GetFiles(path)
-                    .ToList()
-                    .ForEach(s => files.Add(s));
-
-                Directory.GetDirectories(path)
-                    .ToList()
-                    .ForEach(s => AddFiles(s, files));
-            }
-            catch (Exception ex) 
-            { 
-                eBucket.Enqueue(new ExceptionData { Message = "Enum failed: ", Exception = ex, FilePath = GetFilePathFromException(ex.Message) });
-            }
-        }
-
-        static string GetFilePathFromException(string exceptionMessage)
-        {
-            // Matches file path between single quotes
-            string pattern = @"'([^']+)'"; 
-            Match match = Regex.Match(exceptionMessage, pattern);
-
-            if (match.Success && match.Groups.Count > 1) { return match.Groups[1].Value; }
-
-            return exceptionMessage; 
-        }
-
-        /// <summary>
-        /// Monitors the exception bucket for new errors, and prints them to console window as needed.
-        /// </summary>
-        public static void ExceptionOut()
-        {
-            // starting row for exceptions to be printed on
-            int consolePos = StartingExceptionRow;
-            int lastConsolePos;
-            string LastException;
-
-            StringBuilder exStrb = new();
-
-            while (true)
-            {
-                try
-                {
-                    // check for pending exceptions to post to UI
-                    while (eBucket.TryDequeue(out ExceptionData r))
-                    {
-                        lastConsolePos = consolePos;
-                        LastException = exStrb.ToString();
-
-                        // Add new exception to stringbuilder...
-                        exStrb.Clear();
-                        exStrb.Append(RightPoint + r.Message);
-                        exStrb.Append(r.Exception.GetType().ToString());
-                        exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20));
-
-                        // increment row by one for each failed file, eventually wrapping back to the initial row
-                        consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
-                        if (consolePos == 0) { consolePos = StartingExceptionRow; }
-
-                        WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
-
-                        // remove the pointing string from the prior row if applicable
-                        if (!string.IsNullOrEmpty(LastException))
-                        {
-                            WriteLineEx(LastException.Replace(RightPoint, new string(' ', RightPoint.Length)), false, ConsoleColor.Red, 0, lastConsolePos, true, true);
-                        }
-                    }
-
-                    // If flag was raised to clear exceptions, write empty chars to all lines holding exception info
-                    if (ClearVisibleExceptions.IsSet)
-                    {
-                        consolePos = StartingExceptionRow;
-                        for (int i = consolePos; i < Console.WindowHeight - 1; i++)
-                        {
-                            WriteLineEx(string.Empty, false, null, 0, i, true, false);
-                        }
-                        ClearVisibleExceptions.Reset();
-                    }
-                    Thread.Sleep(50);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Exception painter: " + ex.StackTrace);
-                }
-            }
-        }
-
-
-        public static bool RedrawRequired = false;
-        /// <summary>
-        /// Task monitoring console window for size changes, raising redraw flag when necessary
-        /// </summary>
-        public static void ConsoleResizeWatcher()
-        {
-            while (true)
-            {
-                // Compare old/new window sizes with delay
-                CWindowSz oldCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
-                Thread.Sleep(100);
-                CWindowSz newCWindowSz = new() { Width = Console.WindowWidth, Height = Console.WindowHeight };
-
-                // Window size changed? 
-                if (oldCWindowSz.Width != newCWindowSz.Width || oldCWindowSz.Height != newCWindowSz.Height)
-                {
-                    // Allow redraw to occur on other drawing operations for an amount of time.
-                    RedrawRequired = true;
-                    Thread.Sleep(500);
-                    RedrawRequired = false;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Indicates hash progress to user with graphical bar
-        /// </summary>
-        public static void UpdateProcessProgress()
-        {
-            progresspercent = 0;
-            EmptyBlockCount = PBarBlockCapacity;
-            FilledBlockCount = 0;
-
-            while (!ProcessFinished)
-            {
-                try
-                {
-                    // get number of filled & empty boxes to display
-                    FilledBlockCount = (int)Math.Ceiling((decimal)CompletedFileCount / TotalFileCount * PBarBlockCapacity);
-                    EmptyBlockCount = PBarBlockCapacity - FilledBlockCount;
-
-                    WriteLineEx("\rCalculating file hashes, please wait...", false, ConsoleColor.Cyan, 0, 0, true, true);
-
-                    string curFile = "Current File: " + StringExtensions.Truncate(Path.GetFileName(currentfilename.ToString()), Console.WindowWidth - 20);
-                    WriteLineEx(curFile, false, ConsoleColor.Cyan, 0, 1, true, true);
-
-                    if (RedrawRequired) { WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 2, true, true); }
-
-                    // Draw progressbar to console window...
-                    string topRow = BoxBendA + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendB;
-                    string pPercentStr = Math.Round((decimal)CompletedFileCount / TotalFileCount * 100m, 2).ToString() + '%';
-                    string firstHalf = BoxVert + new string(' ', topRow.Length / 2 - pPercentStr.Length) + pPercentStr;
-                    string secondHalf = new string(' ', topRow.Length - firstHalf.Length - 1) + BoxVert;
-
-                    WriteLineEx(topRow, true, ConsoleColor.White, 0, 3, RedrawRequired, true);
-                    WriteLineEx(firstHalf + secondHalf, true, ConsoleColor.White, 0, 4, RedrawRequired, true);
-                    WriteLineEx(BoxVert + new string(BoxFill, FilledBlockCount) + new string(BoxEmpty, EmptyBlockCount) + BoxVert, true, ConsoleColor.White, 0, 5, RedrawRequired, true);
-                    WriteLineEx(BoxBendD + new string(BoxHoriz, EmptyBlockCount + FilledBlockCount) + BoxBendC, true, ConsoleColor.White, 0, 6, RedrawRequired, true);
-                    
-                    if (RedrawRequired) { WriteLineEx(string.Empty, false, ConsoleColor.Cyan, 0, 7, true, true); }
-                    
-                    Thread.Sleep(50);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.StackTrace);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Simplifies console print operations
-        /// </summary>
-        /// <param name="message">String to be output to console window</param>
-        /// <param name="isCentered">TRUE if centered in window, FALSE otherwise</param>
-        /// <param name="cForeground">Text (foreground) color</param>
-        /// <param name="left">Console cell / padding</param>
-        /// <param name="top">Console row</param>
-        /// <param name="clrRow">TRUE to clear row before output</param>
-        /// <param name="termRow">TRUE to add termination char to output</param>
-        static void WriteLineEx(string message, bool isCentered, ConsoleColor? cForeground, int left, int top, bool clrRow, bool termRow)
-        {
-            try
-            {
-                conSph.Wait();
-
-                if (cForeground.HasValue)
-                {
-                    Console.ForegroundColor = (ConsoleColor)cForeground;
-                    LastConsoleForeground = (ConsoleColor)cForeground;
-                }
-
-                else { cForeground = LastConsoleForeground; }
-
-                int padCnt = 0;
-
-                // if a console position has been defined...
-                if (left != -1 && top != -1)
-                {
-                    // if centered text is selected, calculate left-pad
-                    try
-                    {
-                        if (isCentered)
-                        {
-                            int screenWidth = Console.WindowWidth;
-                            int stringWidth = message.Length;
-                            padCnt = (screenWidth / 2) + (stringWidth / 2);
-                        }
-
-                        // otherwise, set position normally
-                        Console.SetCursorPosition(left, top);
-                    }
-                    catch
-                    {
-                        // Console window is likely zero-size
-                        return;
-                    }
-                }
-
-                // Clear row of existing data
-                if (clrRow) { Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r"); }
-
-                if (termRow) { Console.WriteLine(message.PadLeft(padCnt)); }
-                else { Console.Write(message.PadLeft(padCnt)); }
-            }
-
-            finally
-            {
-                conSph.Release();
-            }
         }
 
         static string HashFinder(List<string> files)
@@ -649,9 +342,10 @@ namespace RecursiveHasher
                 {
                     WriteLineEx(">> Searching for hash mismatches",false,ConsoleColor.Cyan,0,2,false,true);
                     // Test for hash differences between both datasets
-                    FileDifferences = FileDataB.AsParallel()
-                        .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash && Path.GetFileName(y.FilePath) == Path.GetFileName(x.FilePath)))
-                        .ToList();
+                    FileDifferences =
+                    [
+                        .. FileDataB.AsParallel().Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash && Path.GetFileName(y.FilePath) == Path.GetFileName(x.FilePath))),
+                    ];
 
                     FileDifferences.ForEach(c => c.Diff = "Hash mismatch");
 
@@ -681,7 +375,7 @@ namespace RecursiveHasher
                         missingInList2.ForEach(c => c.Diff = "Missing from collection " + ComparisonFiles[1].ToString());
                     }
 
-                    FilesMissing = missingInList1.Concat(missingInList2).ToList();
+                    FilesMissing = [.. missingInList1, .. missingInList2];
 
                 }, queryCancellationSource.Token);
 
@@ -732,7 +426,7 @@ namespace RecursiveHasher
                             if (!Directory.Exists(diffFolder)) {  Directory.CreateDirectory(diffFolder); }
 
                             // Copy file differences to folder on desktop
-                            List<FileData> totalDifferences = FileDifferences.Concat(FilesMissing).ToList();
+                            List<FileData> totalDifferences = [.. FileDifferences, .. FilesMissing];
                             foreach (FileData f in totalDifferences)
                             {
                                 string fname = string.Empty;
@@ -804,51 +498,6 @@ namespace RecursiveHasher
                 Console.ReadKey();
             }
         }
-
-        static string ScrubStringForFilename(string inputString)
-        {
-            // Remove invalid characters
-            return DisallowedPathCharacters().Replace(inputString, "");
-        }
-
-        static string FilenameGenerator(string folder, string fileName, int maxAttempts = 1024)
-        {
-            var fileBase = Path.GetFileNameWithoutExtension(fileName);
-            var ext = Path.GetExtension(fileName);
-
-            // Build hash set of filenames for performance
-            var files = new HashSet<string>(Directory.GetFiles(folder));
-
-            for (var index = 0; index < maxAttempts; index++)
-            {
-                // First try with the original filename, else try incrementally adding an index
-                var name = (index == 0)
-                    ? fileName
-                    : string.Format("{0} ({1}){2}", fileBase, index, ext);
-
-                // Check if exists
-                var fullPath = Path.Combine(folder, name);
-                if (files.Contains(fullPath))
-                    continue;
-
-                // Try to create the file
-                try
-                {
-                    return fullPath;
-                }
-                catch (DirectoryNotFoundException) { throw; }
-                catch (DriveNotFoundException) { throw; }
-                catch (IOException)
-                {
-                    // Will occur if another thread created a file with this name since we created the HashSet.
-                    // Ignore this and just try with the next filename.
-                }
-            }
-            throw new Exception("Could not create unique filename in " + maxAttempts + " attempts");
-        }
-
-        [GeneratedRegex(@"[\\/:*?""<>|]")]
-        private static partial Regex DisallowedPathCharacters();
     }
 
     // Custom comparer for FileData based on the FilePath property
