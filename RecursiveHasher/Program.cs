@@ -793,7 +793,7 @@ namespace RecursiveHasher
                         Environment.Exit(0);
                     }
                 }
-                WriteLineEx("Press any key to exit.", false, ConsoleColor.White, 0, 2, false, true);
+                WriteLineEx("Press any key to exit.", false, ConsoleColor.White, 0, 3, false, true);
                 Console.ReadKey();
             }
             catch (Exception ex)
