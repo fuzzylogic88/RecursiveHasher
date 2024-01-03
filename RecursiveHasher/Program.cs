@@ -647,6 +647,7 @@ namespace RecursiveHasher
 
                 Task HashCompare = Task.Run(() =>
                 {
+                    WriteLineEx(">> Searching for hash mismatches",false,ConsoleColor.Cyan,0,2,false,true);
                     // Test for hash differences between both datasets
                     FileDifferences = FileDataB.AsParallel()
                         .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash && Path.GetFileName(y.FilePath) == Path.GetFileName(x.FilePath)))
@@ -655,6 +656,7 @@ namespace RecursiveHasher
                     FileDifferences.ForEach(c => c.Diff = "Hash mismatch");
 
                     // Test for files missing from dataset 1
+                    WriteLineEx(">> Testing for missing files (dataset 1)", false, ConsoleColor.Cyan, 0, 3, false, true);
                     var missingInList1 = FileDataA
                         .AsParallel()
                         .Where(file1 =>
@@ -667,6 +669,7 @@ namespace RecursiveHasher
                     }
 
                     // Test for files missing from dataset 2
+                    WriteLineEx(">> Testing for missing files (dataset 2)", false, ConsoleColor.Cyan, 0, 4, false, true);
                     var missingInList2 = FileDataB
                         .AsParallel()
                         .Where(
