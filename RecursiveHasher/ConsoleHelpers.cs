@@ -1,8 +1,14 @@
-﻿global using static RecursiveHasher.Globals;
+﻿/* 
+ * RecursiveHasher
+ * Daniel Green, 2022
+ * 
+ * ConsoleHelpers.cs - Console setup, progress painting, exception drawing
+ */
+
+global using static RecursiveHasher.Globals;
 
 using System;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -15,6 +21,22 @@ namespace RecursiveHasher
 {
     internal class ConsoleHelpers
     {
+        // box chars
+        private static readonly char BoxFill = '\u2588';
+        private static readonly char BoxEmpty = '\u2593';
+        private static readonly char BoxBendA = '\u2554';
+        private static readonly char BoxBendB = '\u2557';
+        private static readonly char BoxBendC = '\u255D';
+        private static readonly char BoxBendD = '\u255A';
+        private static readonly char BoxHoriz = '\u2550';
+        private static readonly char BoxVert = '\u2551';
+
+        private static readonly string RightPoint = ">> ";
+
+        private static readonly int PBarBlockCapacity = 64;
+
+        private static ConsoleColor LastConsoleForeground = ConsoleColor.White;
+
         public static void ConsoleSetup()
         {
             Console.OutputEncoding = Encoding.Unicode;
@@ -164,6 +186,7 @@ namespace RecursiveHasher
         public static void ExceptionOut()
         {
             // starting row for exceptions to be printed on
+            int StartingExceptionRow = 8;
             int consolePos = StartingExceptionRow;
             int lastConsolePos;
             string LastException;
@@ -182,15 +205,26 @@ namespace RecursiveHasher
 
                         // Add new exception to stringbuilder...
                         exStrb.Clear();
-                        exStrb.Append(RightPoint + r.Message);
+                        exStrb.Append(new string(' ', RightPoint.Length) + r.Message);
                         exStrb.Append(r.Exception.GetType().ToString());
-                        exStrb.Append(" - " + StringExtensions.Truncate(Path.GetFileName(r.FilePath), Console.WindowWidth - exStrb.Length - 20));
+                        if (r.Message.Contains("Enum",StringComparison.OrdinalIgnoreCase))
+                        {
+                            // show only directory
+                            exStrb.Append(" - " + StringExtensions.Truncate(Path.GetDirectoryName(r.FilePath), Console.WindowWidth - exStrb.Length - 5));
+                        }
+                        else
+                        {
+                            // show directory + filename
+                            exStrb.Append(" - " + StringExtensions.Truncate(r.FilePath, Console.WindowWidth - exStrb.Length - 5));
+                        }
+
 
                         // increment row by one for each failed file, eventually wrapping back to the initial row
                         consolePos = (consolePos + 1) % (Console.WindowHeight - 1);
                         if (consolePos == 0) { consolePos = StartingExceptionRow; }
 
-                        WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);
+                        WriteLineEx(exStrb.ToString(), false, ConsoleColor.Red, 0, consolePos, true, true);         // draw exception
+                        WriteLineEx(RightPoint.ToString(), false, ConsoleColor.White, 0, consolePos, false, false); // draw pointer chars
 
                         // remove the pointing string from the prior row if applicable
                         if (!string.IsNullOrEmpty(LastException))
@@ -213,7 +247,7 @@ namespace RecursiveHasher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Exception painter: " + ex.StackTrace);
+                    MessageBox.Show("Exception out: " + ex.StackTrace);
                 }
             }
         }
@@ -239,9 +273,8 @@ namespace RecursiveHasher
             SetConsoleMode(consoleHandle, consoleMode);
         }
 
-        public static bool RedrawRequired = false;
         /// <summary>
-        /// Task monitoring console window for size changes, raising redraw flag when necessary
+        /// Task monitoring console window for size changes, raising RedrawRequired bool flag when necessary
         /// </summary>
         public static void ConsoleResizeWatcher()
         {

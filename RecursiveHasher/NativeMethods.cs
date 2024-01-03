@@ -2,8 +2,7 @@
  * RecursiveHasher
  * Daniel Green, 2022
  * 
- * Computes MD5 hashes for all files in directory/subdirectory,
- * Compares output files to determine if files were missing / deleted.
+ * NativeMethods.cs - Win32 imports / platform-specific calls
  */
 
 using System;

@@ -1,12 +1,15 @@
-﻿using System;
+﻿/* 
+ * RecursiveHasher
+ * Daniel Green, 2022
+ * 
+ * FSHelpers.cs - Filesystem related methods
+ */
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-
-using static RecursiveHasher.Program;
 
 namespace RecursiveHasher
 {
@@ -43,6 +46,7 @@ namespace RecursiveHasher
 
             return exceptionMessage;
         }
+
         public static string ScrubStringForFilename(string inputString)
         {
             // Remove invalid characters

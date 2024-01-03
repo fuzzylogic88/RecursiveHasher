@@ -2,37 +2,32 @@
  * RecursiveHasher
  * Daniel Green, 2022
  * 
- * Computes MD5 hashes for all files in directory/subdirectory,
- * Compares output files to determine if files were missing / deleted.
+ * Program.cs - Contains main window loop & data sort methods
  */
 
 using CsvHelper;
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-
-using static RecursiveHasher.NativeMethods;
-using static RecursiveHasher.FSHelpers;
 using static RecursiveHasher.ConsoleHelpers;
+using static RecursiveHasher.FSHelpers;
 using File = System.IO.File;
 
 namespace RecursiveHasher
 {
     internal partial class Program
     {
+        private static readonly Version minWinVersion = new(6, 1);
+
         [STAThread]
         static void Main(string[] args)
         {
