@@ -8,6 +8,7 @@
 
 using CsvHelper;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -642,35 +643,72 @@ namespace RecursiveHasher
 
                 // Generate a list of file hash differences between all files read.
                 List<FileData> FileDifferences = null;
-                Task queryThread = Task.Run(() =>
+                List<FileData> FilesMissing = null;
+
+                Task HashCompare = Task.Run(() =>
                 {
-                    FileDifferences = [..FileDataB.AsParallel().Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash))];
+                    // Test for hash differences between both datasets
+                    FileDifferences = FileDataB.AsParallel()
+                        .Where(x => !FileDataA.Any(y => y.FileHash == x.FileHash && Path.GetFileName(y.FilePath) == Path.GetFileName(x.FilePath)))
+                        .ToList();
+
+                    FileDifferences.ForEach(c => c.Diff = "Hash mismatch");
+
+                    // Test for files missing from dataset 1
+                    var missingInList1 = FileDataA
+                        .AsParallel()
+                        .Where(file1 =>
+                            !FileDataB.Any(file2 => Path.GetFileName(file2.FilePath) == Path.GetFileName(file1.FilePath)))
+                        .ToList();
+
+                    if (missingInList1.Count != 0)
+                    {
+                        missingInList1.ForEach(c => c.Diff = "Missing from collection " + ComparisonFiles[0].ToString());
+                    }
+
+                    // Test for files missing from dataset 2
+                    var missingInList2 = FileDataB
+                        .AsParallel()
+                        .Where(
+                        file1 => !FileDataA.Any(file2 => Path.GetFileName(file2.FilePath) == Path.GetFileName(file1.FilePath)))
+                        .ToList();
+
+                    if (missingInList2.Count != 0)
+                    {
+                        missingInList2.ForEach(c => c.Diff = "Missing from collection " + ComparisonFiles[1].ToString());
+                    }
+
+                    FilesMissing = missingInList1.Concat(missingInList2).ToList();
+
                 }, queryCancellationSource.Token);
 
-                if (!queryThread.Wait(TimeSpan.FromSeconds(4800)))
+                Task.WhenAny(HashCompare, Task.Delay(TimeSpan.FromSeconds(4800))).Wait();
+
+                // If either comparisons time-out...
+                if (!HashCompare.IsCompleted)
                 {
                     queryCancellationSource.Cancel();
                     Console.Clear();
                     WriteLineEx("Query timed out.", false, ConsoleColor.Red, 0, 0, true, true);
                 }
+
                 else
                 {
                     Console.Clear();
                     WriteLineEx("Data comparison completed successfully.", false, ConsoleColor.Green, 0, 0, true, true);
                 }
 
-                if (FileDifferences.Count == 0)
+                if (FileDifferences.Count == 0 && FilesMissing.Count == 0)
                 {
                     Thread.Sleep(250);
-                    WriteLineEx("No differences found.", false, ConsoleColor.Yellow, 0, 2, true, true);
-                    Console.ReadKey();
+                    WriteLineEx("No file content differences or missing files were found.", false, ConsoleColor.Yellow, 0, 2, true, true);
                 }
 
                 Thread.Sleep(250);
 
-                if (FileDifferences.Count > 0)
+                if (FileDifferences.Count != 0 || FilesMissing.Count != 0)
                 {
-                    WriteLineEx(FileDifferences.Count.ToString() + " file differences found.", false, ConsoleColor.Green, 0, 2, true, true);
+                    WriteLineEx(FileDifferences.Count.ToString() + " file content differences found. " + FilesMissing.Count.ToString() + " file presence differences found.", false, ConsoleColor.Green, 0, 2, true, true);
                     WriteLineEx("Press C to copy differences to folder on Desktop.", false, ConsoleColor.White, 0, 4, true, true);
                     WriteLineEx("Press any other key to exit.", false, ConsoleColor.White, 0, 5, true, true);
 
@@ -679,46 +717,60 @@ namespace RecursiveHasher
                     {
                         try
                         {
-                            Console.Clear();
                             WriteLineEx("Copying data, please wait...", false, ConsoleColor.Cyan, 0, 7, false, false);
 
-                            string dfolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
-                            if (!Directory.Exists(dfolder))
-                            {
-                                Directory.CreateDirectory(dfolder);
-                            }
+                            string rootFolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\FileDifferences\";
+                            string missFolder = Path.Combine(rootFolder, @"missing\");
+                            string diffFolder = Path.Combine(rootFolder, @"hash\");
+                            string outputFolder = string.Empty;
+
+                            if (!Directory.Exists(rootFolder)) { Directory.CreateDirectory(rootFolder); }
+                            if (!Directory.Exists(missFolder)) { Directory.CreateDirectory(missFolder); }
+                            if (!Directory.Exists(diffFolder)) {  Directory.CreateDirectory(diffFolder); }
 
                             // Copy file differences to folder on desktop
-                            foreach (FileData diff in FileDifferences)
+                            List<FileData> totalDifferences = FileDifferences.Concat(FilesMissing).ToList();
+                            foreach (FileData f in totalDifferences)
                             {
                                 string fname = string.Empty;
-                                string OriginalFileName = Path.GetFileName(diff.FilePath);
+                                string OriginalFileName = Path.GetFileName(f.FilePath);
 
-                                // in the event of duplicate photos, check that filename is unique...
-                                if (File.Exists(dfolder + OriginalFileName))
+                                if (f.Diff.Contains("missing", StringComparison.OrdinalIgnoreCase)) { outputFolder = missFolder; }
+                                else if (f.Diff.Contains("mismatch", StringComparison.OrdinalIgnoreCase)) { outputFolder = diffFolder; }
+                                else
                                 {
-                                    fname = FilenameGenerator(dfolder, OriginalFileName, 1024);
+                                    outputFolder = rootFolder;
+                                    f.Diff = "File disposition unknown (check your code).";
                                 }
-                                else { fname = dfolder + OriginalFileName; }
 
-                                // Copy file to directory, NOT overwriting.
-                                try
+                                if (!string.IsNullOrEmpty(outputFolder))
                                 {
-                                    File.Copy(diff.FilePath, fname, false);
-                                }
-                                catch (Exception ex)
-                                {
-                                    ErrorOnCopy = true;
-                                    eBucket.Enqueue(new ExceptionData { Message = "Copy error: ", Exception = ex, FilePath = diff.FilePath });
+                                    // in the event of duplicate photos, check that filename is unique...
+                                    if (File.Exists(outputFolder + OriginalFileName))
+                                    {
+                                        fname = FilenameGenerator(outputFolder, OriginalFileName, 1024);
+                                    }
+                                    else { fname = outputFolder + OriginalFileName; }
+
+                                    // Copy file to directory, NOT overwriting.
+                                    try
+                                    {
+                                        File.Copy(f.FilePath, fname, false);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        ErrorOnCopy = true;
+                                        eBucket.Enqueue(new ExceptionData { Message = "Copy error: ", Exception = ex, FilePath = f.FilePath });
+                                    }
                                 }
                             }
 
-                            string DiffResultPath = FilenameGenerator(dfolder, "FileDifferences.csv", 1024);
+                            string DiffResultPath = FilenameGenerator(rootFolder, "FileDifferences.csv", 1024);
 
                             using (var sw = new StreamWriter(DiffResultPath))
                             {
                                 using CsvWriter csv = new(sw, CultureInfo.CurrentCulture);
-                                csv.WriteRecords(FileDifferences);
+                                csv.WriteRecords(totalDifferences);
                             }
 
                             Thread.Sleep(250);
@@ -796,6 +848,21 @@ namespace RecursiveHasher
         private static partial Regex DisallowedPathCharacters();
     }
 
+    // Custom comparer for FileData based on the FilePath property
+    class FileDataComparer : IEqualityComparer<FileData>
+    {
+        public bool Equals(FileData x, FileData y)
+        {
+            return x.FilePath == y.FilePath;
+        }
+
+        public int GetHashCode(FileData obj)
+        {
+            // Ensure the hash code is based on the FilePath property
+            return obj.FilePath.GetHashCode();
+        }
+    }
+
     internal static class StringExtensions
     {
         public static string Truncate(this string value, int maxLength, string truncationSuffix = "…")
@@ -815,7 +882,9 @@ namespace RecursiveHasher
         public string FilePath { get; set; }
         public string FileHash { get; set; }
         public string DateOfAnalysis { get; set; }
+        public string Diff {  get; set; }
     }
+
     public class ExceptionData
     {
         public string Message {  get; set; }
